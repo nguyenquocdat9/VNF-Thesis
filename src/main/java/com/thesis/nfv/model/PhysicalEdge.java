@@ -1,11 +1,11 @@
 package com.thesis.nfv.model;
 
-class PhysicalEdge {
-    String sourceId;
-    String destId;
-    double bandwidth; // maximum bandwidth [cite: 108]
-    double propagationDelay; // propagationDelay (D_ej) [cite: 108]
-    double bwUsed;
+public class PhysicalEdge {
+    public String sourceId;
+    public String destId;
+    public double bandwidth; // maximum bandwidth [cite: 108]
+    public double propagationDelay; // propagationDelay (D_ej) [cite: 108]
+    public double bwUsed = 0;
 
     public PhysicalEdge(String src, String dst, double bw, double delay) {
         this.sourceId = src;

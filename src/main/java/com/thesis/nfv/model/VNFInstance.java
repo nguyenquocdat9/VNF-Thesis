@@ -3,18 +3,20 @@ package com.thesis.nfv.model;
 import java.util.ArrayList;
 import java.util.List;
 
-class VNFInstance {
-    String id;
-    String type;
-    double cpuReq; // Tài nguyên VNF cần [cite: 115]
-    double memReq;
-    double processingCapacity; // processingCapacity (C_mi) [cite: 131]
-    PhysicalNode hostNode; // The physical node cantaining this VNF
-    List<SFCRequest> sharedBySFCs = new ArrayList<>(); // List of SFC using this VNF [cite: 194]
+public class VNFInstance {
+    public String id;
+    public String type; // Loại VNF [cite: 117]
+    public double cpuReq; // [cite: 115, 126]
+    public double memReq; // [cite: 115, 126]
+    public double processingCapacity; // C_mi' [cite: 131]
+    public PhysicalNode hostNode; // Vị trí hiện tại y_mi^ni [cite: 156, 164]
 
-    // Tính tốc độ xử lý cấp cho 1 SFC cụ thể (nu_mi) [cite: 137]
+    // Danh sách các SFC đang dùng chung VNFI này (VNFI Sharing) [cite: 50, 131, 194]
+    public List<SFCRequest> sharedBySFCs = new ArrayList<>();
+
     public double getAllocatedRate(SFCRequest sfc) {
-        // Giả sử chia đều tài nguyên xử lý cho các SFC đang dùng chung [cite: 133]
+        // nu_mi^mu: Tốc độ xử lý cấp cho mỗi SFC (Giả sử chia đều) [cite: 133, 137]
+        if (sharedBySFCs.isEmpty()) return processingCapacity;
         return processingCapacity / sharedBySFCs.size();
     }
 }

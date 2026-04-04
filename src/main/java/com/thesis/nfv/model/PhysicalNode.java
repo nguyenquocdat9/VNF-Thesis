@@ -1,11 +1,12 @@
 package com.thesis.nfv.model;
 
-class PhysicalNode {
-    String id;
-    double cpuCapacity; // Total CPU [cite: 106]
-    double memCapacity; // Total RAM [cite: 106]
-    double cpuUsed;
-    double memUsed;
+public class PhysicalNode {
+    public String id;
+    public double cpuCapacity; // Total CPU [cite: 106]
+    public double memCapacity; // Total RAM [cite: 106]
+    public double cpuUsed = 0;
+    public double memUsed = 0;
+    public boolean isFailed = false; // Phục vụ kịch bản Migration Trigger
 
     public PhysicalNode(String id, double cpu, double mem) {
         this.id = id;
