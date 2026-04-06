@@ -7,8 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class NetworkTopology {
-    private List<PhysicalNode> allNodes = new ArrayList<>();
-    private List<PhysicalEdge> allEdges = new ArrayList<>();
+    public List<PhysicalNode> allNodes = new ArrayList<>();
+    public List<PhysicalEdge> allEdges = new ArrayList<>();
 
     public void buildFatTreeK6() {
         int k = 6;
