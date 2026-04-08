@@ -2,7 +2,6 @@ package com.thesis.nfv.core;
 
 import com.thesis.nfv.model.PhysicalEdge;
 import com.thesis.nfv.model.PhysicalNode;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,32 +9,60 @@ public class NetworkTopology {
     public List<PhysicalNode> allNodes = new ArrayList<>();
     public List<PhysicalEdge> allEdges = new ArrayList<>();
 
-    public void buildFatTreeK6() {
-        int k = 6;
-        // Khởi tạo Core Nodes: (k/2)^2 = 9
-        for (int i = 0; i < 9; i++) allNodes.add(new PhysicalNode("Core_" + i, 30, 64));
+    // Hàm xây dựng Fat-Tree tổng quát với tham số k
+    public void buildFatTree(int k) {
+        if (k % 2 != 0) {
+            throw new IllegalArgumentException("Tham số k của Fat-Tree phải là số chẵn!");
+        }
 
-        // Khởi tạo 6 Pods, mỗi Pod có 3 Agg và 3 Edge nodes
+        allNodes.clear();
+        allEdges.clear();
+
+        // 1. Khởi tạo Core Nodes: (k/2)^2 nút
+        int numCore = (k / 2) * (k / 2);
+        List<PhysicalNode> coreNodes = new ArrayList<>();
+        for (int i = 0; i < numCore; i++) {
+            PhysicalNode core = new PhysicalNode("Core_" + i, 100, 256); // Core thường có tài nguyên lớn
+            allNodes.add(core);
+            coreNodes.add(core);
+        }
+
+        // 2. Duyệt qua từng Pod (tổng cộng k Pods)
         for (int p = 0; p < k; p++) {
-            List<PhysicalNode> aggNodes = new ArrayList<>();
-            List<PhysicalNode> edgeNodes = new ArrayList<>();
+            List<PhysicalNode> podAggNodes = new ArrayList<>();
+            List<PhysicalNode> podEdgeNodes = new ArrayList<>();
 
-            for (int i = 0; i < k/2; i++) {
-                PhysicalNode agg = new PhysicalNode("Pod" + p + "_Agg_" + i, 20, 32);
-                PhysicalNode edge = new PhysicalNode("Pod" + p + "_Edge_" + i, 15, 16);
-                allNodes.add(agg); allNodes.add(edge);
-                aggNodes.add(agg); edgeNodes.add(edge);
+            // Khởi tạo Aggregation và Edge Nodes cho mỗi Pod (mỗi loại k/2 nút)
+            for (int i = 0; i < k / 2; i++) {
+                PhysicalNode agg = new PhysicalNode("Pod" + p + "_Agg_" + i, 40, 64);
+                PhysicalNode edge = new PhysicalNode("Pod" + p + "_Edge_" + i, 50, 64);
+
+                allNodes.add(agg);
+                allNodes.add(edge);
+                podAggNodes.add(agg);
+                podEdgeNodes.add(edge);
             }
 
-            // Kết nối nội bộ Pod (Edge-Agg): Trễ 2ms [cite: 418]
-            for (PhysicalNode e : edgeNodes)
-                for (PhysicalNode a : aggNodes)
-                    allEdges.add(new PhysicalEdge(e.id, a.id, 1000, 2.0));
+            // A. Kết nối nội bộ Pod (Edge <-> Agg): Mesh hoàn chỉnh trong Pod
+            // Trễ Edge-Agg: 2ms
+            for (PhysicalNode e : podEdgeNodes) {
+                for (PhysicalNode a : podAggNodes) {
+                    allEdges.add(new PhysicalEdge(e.id, a.id, 10000, 2.0));
+                }
+            }
 
-            // Kết nối Agg-Core: Trễ 4ms [cite: 418]
-            for (int i = 0; i < aggNodes.size(); i++)
-                for (int j = 0; j < k/2; j++)
-                    allEdges.add(new PhysicalEdge(aggNodes.get(i).id, allNodes.get(i*(k/2)+j).id, 1000, 4.0));
+            // B. Kết nối Agg <-> Core
+            // Mỗi Agg node thứ 'i' sẽ kết nối với k/2 Core nodes
+            for (int i = 0; i < podAggNodes.size(); i++) {
+                PhysicalNode agg = podAggNodes.get(i);
+                // Công thức Fat-Tree: Agg node i kết nối tới các Core node từ (i * k/2) đến (i * k/2 + k/2 - 1)
+                int startCoreIndex = i * (k / 2);
+                for (int j = 0; j < k / 2; j++) {
+                    PhysicalNode core = coreNodes.get(startCoreIndex + j);
+                    allEdges.add(new PhysicalEdge(agg.id, core.id, 10000, 4.0));
+                }
+            }
         }
+        System.out.println("[INFO] Topology Fat-Tree k=" + k + " created. Total Nodes: " + allNodes.size());
     }
 }

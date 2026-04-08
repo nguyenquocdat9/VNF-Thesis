@@ -27,12 +27,13 @@ public class MetricsCalculator {
     // 2. Tính trễ truyền dẫn (T_mu) dựa trên khoảng cách giữa các node [cite: 168, 169]
     private double calculateTransmissionDelay(SFCRequest sfc) {
         double totalT = 0;
+        // 1. Trễ từ Nút Lỗi (giả định là nơi Client kết nối) tới VNF đầu tiên
+        PhysicalNode clientLoc = new PhysicalNode("Pod0_Edge_0", 0, 0); // Vị trí client
+        totalT += getDistanceDelay(clientLoc, sfc.vnfChain.get(0).hostNode);
+
+        // 2. Trễ giữa các VNF
         for (int i = 0; i < sfc.vnfChain.size() - 1; i++) {
-            PhysicalNode src = sfc.vnfChain.get(i).hostNode;
-            PhysicalNode dst = sfc.vnfChain.get(i + 1).hostNode;
-            if (src != null && dst != null) {
-                totalT += getDistanceDelay(src, dst);
-            }
+            totalT += getDistanceDelay(sfc.vnfChain.get(i).hostNode, sfc.vnfChain.get(i+1).hostNode);
         }
         return totalT;
     }
@@ -92,10 +93,18 @@ public class MetricsCalculator {
 
     private double getDistanceDelay(PhysicalNode src, PhysicalNode dst) {
         if (src.id.equals(dst.id)) return 0.0;
+
         String srcPod = getPodId(src.id);
         String dstPod = getPodId(dst.id);
-        if (srcPod.equals(dstPod)) return 4.0; // Edge -> Agg -> Edge
-        return 12.0; // Edge -> Agg -> Core -> Agg -> Edge
+
+        if (srcPod.equals(dstPod)) {
+            // Cùng Pod: 10 + 10 = 20ms
+            return 2.0;
+        } else {
+            // Khác Pod: Edge -> Agg -> Core -> Agg -> Edge
+            // 10 + 20 + 20 + 10 = 60ms
+            return 100.0;
+        }
     }
 
     // Hàm bổ trợ để lấy tên Pod từ chuỗi ID nút
