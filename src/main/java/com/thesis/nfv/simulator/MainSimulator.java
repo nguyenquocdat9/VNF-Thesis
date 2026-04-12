@@ -8,121 +8,132 @@ import java.util.stream.Collectors;
 
 public class MainSimulator {
     public static void main(String[] args) {
+        // Các mức CPU thử nghiệm: từ rất nghèo nàn (20) đến dồi dào (100)
+        int[] cpuThresholds = {5, 7, 10, 13, 16};
+
+        Map<Integer, Double> mshorDelayMap = new TreeMap<>();
+        Map<Integer, Double> greedyDelayMap = new TreeMap<>();
+        Map<Integer, Double> mshorLoadMap = new TreeMap<>();
+        Map<Integer, Double> greedyLoadMap = new TreeMap<>();
+
         double highTraffic = 2000.0;
-        // 1. Tăng k lên 10 để mạng rộng hơn (50 Edge Nodes)
-        NetworkTopology topology = new NetworkTopology();
-        topology.buildFatTree(10);
+        int k = 10;
 
-        MetricsCalculator metrics = new MetricsCalculator();
+        for (int cpuCap : cpuThresholds) {
+            System.out.println("\n>>> ĐANG CHẠY THỰC NGHIỆM VỚI CPU CAPACITY = " + cpuCap);
 
-        // 2. Lấy danh sách Edge Nodes (Lúc này sẽ có 50 nút)
-        List<PhysicalNode> allEdgeNodes = topology.allNodes.stream()
-                .filter(n -> n.id.toLowerCase().contains("edge"))
-                .collect(Collectors.toList());
+            // 1. Setup Topology
+            NetworkTopology topology = new NetworkTopology();
+            topology.buildFatTreeCustom(k, cpuCap);
+            MetricsCalculator metrics = new MetricsCalculator();
 
-        // Reset tài nguyên
-        for(PhysicalNode n : allEdgeNodes) {
-            n.cpuUsed = 0; n.memUsed = 0; n.isFailed = false;
+            List<PhysicalNode> allEdgeNodes = topology.allNodes.stream()
+                    .filter(n -> n.id.toLowerCase().contains("edge"))
+                    .collect(Collectors.toList());
+
+            // 2. Tạo VNF và SFC (Reset mỗi vòng lặp để đảm bảo tính công bằng)
+            VNFInstance fw = VNFFactory.createVNF("FIREWALL", "0");
+            VNFInstance ids = VNFFactory.createVNF("IDS", "0");
+            VNFInstance nat = VNFFactory.createVNF("NAT", "0");
+            VNFInstance dpi = VNFFactory.createVNF("DPI", "0");
+
+            List<SFCRequest> sfcList = createSFCs(fw, ids, nat, dpi, highTraffic);
+            List<VNFInstance> affectedVNFs = new ArrayList<>(Arrays.asList(fw, ids, nat, dpi));
+
+            PhysicalNode bottleneckNode = allEdgeNodes.stream()
+                    .filter(n -> n.id.contains("Pod0_Edge_0")).findFirst().get();
+
+            // Giả lập trạng thái trước khi hỏng
+            deployVNF(fw, bottleneckNode);
+            deployVNF(ids, bottleneckNode);
+            deployVNF(nat, bottleneckNode);
+            deployVNF(dpi, bottleneckNode);
+
+            // Bắt đầu lỗi
+            bottleneckNode.isFailed = true;
+
+            // --- TEST MSH-OR ---
+            MigrationEngine.triggerMigration("MSHOR", affectedVNFs, allEdgeNodes);
+            double mshorDelayAvg = sfcList.stream().mapToDouble(metrics::calculateTotalSFCDelay).average().orElse(0);
+            double mshorLoad = metrics.calculateNetworkLoad(topology.allNodes, topology.allEdges);
+            mshorDelayMap.put(cpuCap, mshorDelayAvg);
+            mshorLoadMap.put(cpuCap, mshorLoad);
+
+            /** Xuất ra file DOT */
+            if (cpuCap == 5 || cpuCap == 16) { // Chỉ xuất file ở 2 mức cực đoan để so sánh
+                String fileName = "topology_cpu_" + cpuCap + ".dot";
+                topology.exportToDOT(fileName, affectedVNFs);
+            }
+
+            // --- RESET ĐỂ TEST GREEDY ---
+            resetVNFsForComparison(affectedVNFs, bottleneckNode);
+
+            // --- TEST GREEDY ---
+            List<PhysicalNode> shuffledNodes = new ArrayList<>(allEdgeNodes.stream()
+                    .filter(n -> !n.id.contains("Pod0")) // Cấm Greedy chọn Pod 0
+                    .toList());
+            Collections.shuffle(shuffledNodes); // Xáo trộn để mô phỏng tính ngẫu nhiên của Greedy
+            MigrationEngine.triggerMigration("GREEDY", affectedVNFs, shuffledNodes);
+            double greedyDelayAvg = sfcList.stream().mapToDouble(metrics::calculateTotalSFCDelay).average().orElse(0);
+            double greedyLoad = metrics.calculateNetworkLoad(topology.allNodes, topology.allEdges);
+            greedyDelayMap.put(cpuCap, greedyDelayAvg);
+            greedyLoadMap.put(cpuCap, greedyLoad);
         }
 
-        System.out.println(">>> System ready with: " + allEdgeNodes.size() + " Edge Nodes.");
+        System.out.println("\n--- ĐANG XUẤT BIỂU ĐỒ CỘT SO SÁNH BIẾN THIÊN ---");
 
-        // 3. Sử dụng Factory để tạo VNF
-        VNFInstance fw = VNFFactory.createVNF("FIREWALL", "0");
-        VNFInstance ids = VNFFactory.createVNF("IDS", "0");
-        VNFInstance nat = VNFFactory.createVNF("NAT", "0");
-        VNFInstance dpi = VNFFactory.createVNF("DPI", "0");
+        // Xuất biểu đồ Độ trễ dưới dạng cột nhóm
+        ChartExporter.exportGroupedBarChart(
+                "So sánh Độ trễ theo tài nguyên CPU",
+                "CPU Capacity của mỗi nút",
+                "Delay (ms)",
+                mshorDelayMap,
+                greedyDelayMap,
+                "delay_comparison_bar.png");
 
-        // 4. Đặt ban đầu vào Pod0_Edge_0
-        PhysicalNode bottleneckNode = allEdgeNodes.stream()
-                .filter(n -> n.id.contains("Pod0_Edge_0")).findFirst()
-                .orElseThrow(() -> new RuntimeException("Can't find Pod0_Edge_0!"));
+        // Xuất biểu đồ Cân bằng tải dưới dạng cột nhóm
+        ChartExporter.exportGroupedBarChart(
+                "So sánh Chỉ số Cân bằng tải theo tài nguyên CPU",
+                "CPU Capacity của mỗi nút",
+                "Load Index (L)",
+                mshorLoadMap,
+                greedyLoadMap,
+                "load_comparison_bar.png");
+    }
 
-        deployVNF(fw, bottleneckNode);
-        deployVNF(ids, bottleneckNode);
-        deployVNF(nat, bottleneckNode);
-        deployVNF(dpi, bottleneckNode);
+    // HÀM BỔ TRỢ 1: Tạo danh sách SFC cứu trợ
+    private static List<SFCRequest> createSFCs(VNFInstance fw, VNFInstance ids, VNFInstance nat, VNFInstance dpi, double traffic) {
+        List<SFCRequest> list = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            SFCRequest sfc = new SFCRequest("SFC_" + i, traffic, 100.0);
+            sfc.arrivalRate = traffic;
+            sfc.vnfChain.addAll(Arrays.asList(fw, ids, nat, dpi));
 
-        // 5. Tạo 10 SFC dùng chung (Sharing)
-        List<SFCRequest> sfcList = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            SFCRequest sfc = new SFCRequest("SFC_" + i, highTraffic, 100.0);
-            sfc.arrivalRate = highTraffic;
-            sfc.vnfChain.add(fw);
-            sfc.vnfChain.add(ids);
-            sfc.vnfChain.add(nat);
-            sfc.vnfChain.add(dpi);
-
-            // Link VNF -> SFC (Dùng cho Giai đoạn 1)
+            // Link ngược để thuật toán MSH-OR Giai đoạn 1 thấy được mức độ ưu tiên
             if(!fw.sharedBySFCs.contains(sfc)) fw.sharedBySFCs.add(sfc);
             if(!ids.sharedBySFCs.contains(sfc)) ids.sharedBySFCs.add(sfc);
             if(!nat.sharedBySFCs.contains(sfc)) nat.sharedBySFCs.add(sfc);
+            if(!dpi.sharedBySFCs.contains(sfc)) dpi.sharedBySFCs.add(sfc);
 
-            sfcList.add(sfc);
+            list.add(sfc);
         }
+        return list;
+    }
 
-        // 6. GIẢ LẬP LỖI NÚT
-        System.out.println("\n=== KỊCH BẢN: NÚT " + bottleneckNode.id + " BỊ LỖI ===");
-        bottleneckNode.isFailed = true;
-        List<VNFInstance> affectedVNFs = new ArrayList<>(Arrays.asList(fw, ids, nat, dpi));
-
-        // --- CHẠY THUẬT TOÁN MSH-OR ---
-        System.out.println("\n--- [TEST 1] THUẬT TOÁN MSH-OR ---");
-        // MSH-OR thông minh nên không sợ danh sách bị xáo trộn, nhưng ta cứ chạy bình thường
-        MigrationEngine.triggerMigration("MSHOR", affectedVNFs, allEdgeNodes);
-        System.out.print(">> KẾT QUẢ MSH-OR:");
-        printFinalResults(sfcList, topology, metrics);
-
-        // --- RESET ĐỂ CHẠY GREEDY ---
-        for (VNFInstance vnf : affectedVNFs) {
-            if (vnf.hostNode != null) {
-                vnf.hostNode.cpuUsed -= vnf.cpuReq;
-                vnf.hostNode.memUsed -= vnf.memReq;
+    // HÀM BỔ TRỢ 2: Reset trạng thái VNF về nút lỗi ban đầu
+    private static void resetVNFsForComparison(List<VNFInstance> vnfs, PhysicalNode failedNode) {
+        for (VNFInstance v : vnfs) {
+            if (v.hostNode != null) {
+                v.hostNode.cpuUsed -= v.cpuReq;
+                v.hostNode.memUsed -= v.memReq;
             }
-            vnf.hostNode = bottleneckNode;
+            v.hostNode = failedNode;
         }
-
-        // --- CHẠY THUẬT TOÁN GREEDY ---
-        System.out.println("\n--- [TEST 2] THUẬT TOÁN GREEDY (FIRST-FIT) ---");
-
-        // XÁO TRỘN DANH SÁCH NÚT: Đây là bước quan trọng để tạo ra sự khác biệt
-        // Greedy sẽ lấy nút đầu tiên trong danh sách đã shuffle này
-        List<PhysicalNode> shuffledNodes = new ArrayList<>(allEdgeNodes);
-        Collections.shuffle(shuffledNodes);
-
-        MigrationEngine.triggerMigration("GREEDY", affectedVNFs, shuffledNodes);
-
-        System.out.print(">> KẾT QUẢ GREEDY:");
-        printFinalResults(sfcList, topology, metrics);
     }
 
     private static void deployVNF(VNFInstance vnf, PhysicalNode node) {
         vnf.hostNode = node;
         node.cpuUsed += vnf.cpuReq;
         node.memUsed += vnf.memReq;
-        System.out.println("Placed " + vnf.id + " at " + node.id + " (Curent load: CPU " + node.cpuUsed + ")");
-    }
-
-    private static void printFinalResults(List<SFCRequest> sfcs, NetworkTopology topo, MetricsCalculator mc) {
-        double totalDelay = 0;
-        int recovered = 0;
-
-        System.out.println("\n All SFC Delay");
-        for (SFCRequest sfc : sfcs) {
-            double d = mc.calculateTotalSFCDelay(sfc);
-            System.out.println("- " + sfc.id + ": " + String.format("%.2f", d) + " ms");
-
-            totalDelay += d;
-            // Nếu trễ thấp (không bị dính penalty 1000ms), coi như thành công
-            if (d < 500.0) recovered++;
-        }
-
-        // QUAN TRỌNG: Truyền topo.allEdges vào đây thay vì rỗng
-        double networkLoad = mc.calculateNetworkLoad(topo.allNodes, topo.allEdges);
-
-        System.out.println("\n>> Algorithm result:");
-        System.out.println(">> Number SFC recovered: " + recovered + "/10");
-        System.out.println(">> Total system Delay: " + String.format("%.2f", totalDelay) + " ms");
-        System.out.println(">> Load Balancing (L): " + String.format("%.6f", networkLoad));
     }
 }

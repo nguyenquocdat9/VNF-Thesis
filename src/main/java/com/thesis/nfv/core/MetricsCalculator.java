@@ -99,11 +99,10 @@ public class MetricsCalculator {
 
         if (srcPod.equals(dstPod)) {
             // Cùng Pod: 10 + 10 = 20ms
-            return 2.0;
+            return 8.0;
         } else {
             // Khác Pod: Edge -> Agg -> Core -> Agg -> Edge
-            // 10 + 20 + 20 + 10 = 60ms
-            return 100.0;
+            return 20.0;
         }
     }
 
