@@ -8,7 +8,6 @@ import java.util.stream.Collectors;
 
 public class MainSimulator {
     public static void main(String[] args) {
-        // Các mức CPU thử nghiệm: từ rất nghèo nàn (20) đến dồi dào (100)
         int[] cpuThresholds = {5, 7, 10, 13, 16};
 
         Map<Integer, Double> mshorDelayMap = new TreeMap<>();
@@ -19,9 +18,11 @@ public class MainSimulator {
         double highTraffic = 2000.0;
         int k = 10;
 
-        for (int cpuCap : cpuThresholds) {
-            System.out.println("\n>>> ĐANG CHẠY THỰC NGHIỆM VỚI CPU CAPACITY = " + cpuCap);
+        System.out.println("=================================================================================");
+        System.out.printf("%-15s | %-20s | %-20s | %-15s\n", "CPU CAP", "ALGORITHM", "AVG DELAY (ms)", "LOAD INDEX (L)");
+        System.out.println("---------------------------------------------------------------------------------");
 
+        for (int cpuCap : cpuThresholds) {
             // 1. Setup Topology
             NetworkTopology topology = new NetworkTopology();
             topology.buildFatTreeCustom(k, cpuCap);
@@ -31,7 +32,7 @@ public class MainSimulator {
                     .filter(n -> n.id.toLowerCase().contains("edge"))
                     .collect(Collectors.toList());
 
-            // 2. Tạo VNF và SFC (Reset mỗi vòng lặp để đảm bảo tính công bằng)
+            // 2. Setup VNFs & SFCs
             VNFInstance fw = VNFFactory.createVNF("FIREWALL", "0");
             VNFInstance ids = VNFFactory.createVNF("IDS", "0");
             VNFInstance nat = VNFFactory.createVNF("NAT", "0");
@@ -43,84 +44,67 @@ public class MainSimulator {
             PhysicalNode bottleneckNode = allEdgeNodes.stream()
                     .filter(n -> n.id.contains("Pod0_Edge_0")).findFirst().get();
 
-            // Giả lập trạng thái trước khi hỏng
             deployVNF(fw, bottleneckNode);
             deployVNF(ids, bottleneckNode);
             deployVNF(nat, bottleneckNode);
             deployVNF(dpi, bottleneckNode);
 
-            // Bắt đầu lỗi
             bottleneckNode.isFailed = true;
 
             // --- TEST MSH-OR ---
             MigrationEngine.triggerMigration("MSHOR", affectedVNFs, allEdgeNodes);
             double mshorDelayAvg = sfcList.stream().mapToDouble(metrics::calculateTotalSFCDelay).average().orElse(0);
             double mshorLoad = metrics.calculateNetworkLoad(topology.allNodes, topology.allEdges);
+
+            // Log dòng MSH-OR
+            System.out.printf("%-15d | %-20s | %-20.4f | %-15.6f\n", cpuCap, "MSH-OR (Proposed)", mshorDelayAvg, mshorLoad);
+
             mshorDelayMap.put(cpuCap, mshorDelayAvg);
             mshorLoadMap.put(cpuCap, mshorLoad);
 
-            /** Xuất ra file DOT */
-            if (cpuCap == 5 || cpuCap == 16) { // Chỉ xuất file ở 2 mức cực đoan để so sánh
-                String fileName = "topology_cpu_" + cpuCap + ".dot";
-                topology.exportToDOT(fileName, affectedVNFs);
+            if (cpuCap == 5 || cpuCap == 16) {
+                topology.exportToDOT("topology_cpu_" + cpuCap + ".dot", affectedVNFs);
             }
 
-            // --- RESET ĐỂ TEST GREEDY ---
+            // --- RESET & TEST GREEDY ---
             resetVNFsForComparison(affectedVNFs, bottleneckNode);
 
-            // --- TEST GREEDY ---
-            List<PhysicalNode> shuffledNodes = new ArrayList<>(allEdgeNodes.stream()
-                    .filter(n -> !n.id.contains("Pod0")) // Cấm Greedy chọn Pod 0
-                    .toList());
-            Collections.shuffle(shuffledNodes); // Xáo trộn để mô phỏng tính ngẫu nhiên của Greedy
-            MigrationEngine.triggerMigration("GREEDY", affectedVNFs, shuffledNodes);
+            List<PhysicalNode> greedyCandidates = allEdgeNodes.stream()
+                    .filter(n -> !n.id.contains("Pod0"))
+                    .collect(Collectors.toList());
+            Collections.shuffle(greedyCandidates);
+
+            MigrationEngine.triggerMigration("GREEDY", affectedVNFs, greedyCandidates);
             double greedyDelayAvg = sfcList.stream().mapToDouble(metrics::calculateTotalSFCDelay).average().orElse(0);
             double greedyLoad = metrics.calculateNetworkLoad(topology.allNodes, topology.allEdges);
+
+            // Log dòng Greedy
+            System.out.printf("%-15s | %-20s | %-20.4f | %-15.6f\n", "", "Greedy (FF)", greedyDelayAvg, greedyLoad);
+            System.out.println("---------------------------------------------------------------------------------");
+
             greedyDelayMap.put(cpuCap, greedyDelayAvg);
             greedyLoadMap.put(cpuCap, greedyLoad);
         }
 
-        System.out.println("\n--- ĐANG XUẤT BIỂU ĐỒ CỘT SO SÁNH BIẾN THIÊN ---");
+        // Xuất biểu đồ
+        ChartExporter.exportGroupedBarChart("So sánh Độ trễ", "CPU Capacity", "Delay (ms)", mshorDelayMap, greedyDelayMap, "delay_comparison_bar.png");
+        ChartExporter.exportGroupedBarChart("So sánh Cân bằng tải", "CPU Capacity", "Load Index", mshorLoadMap, greedyLoadMap, "load_comparison_bar.png");
 
-        // Xuất biểu đồ Độ trễ dưới dạng cột nhóm
-        ChartExporter.exportGroupedBarChart(
-                "So sánh Độ trễ theo tài nguyên CPU",
-                "CPU Capacity của mỗi nút",
-                "Delay (ms)",
-                mshorDelayMap,
-                greedyDelayMap,
-                "delay_comparison_bar.png");
-
-        // Xuất biểu đồ Cân bằng tải dưới dạng cột nhóm
-        ChartExporter.exportGroupedBarChart(
-                "So sánh Chỉ số Cân bằng tải theo tài nguyên CPU",
-                "CPU Capacity của mỗi nút",
-                "Load Index (L)",
-                mshorLoadMap,
-                greedyLoadMap,
-                "load_comparison_bar.png");
+        System.out.println("\n>>> THỰC NGHIỆM HOÀN TẤT. BIỂU ĐỒ ĐÃ ĐƯỢC XUẤT RA FILE PNG.");
     }
 
-    // HÀM BỔ TRỢ 1: Tạo danh sách SFC cứu trợ
     private static List<SFCRequest> createSFCs(VNFInstance fw, VNFInstance ids, VNFInstance nat, VNFInstance dpi, double traffic) {
         List<SFCRequest> list = new ArrayList<>();
         for (int i = 0; i < 100; i++) {
             SFCRequest sfc = new SFCRequest("SFC_" + i, traffic, 100.0);
             sfc.arrivalRate = traffic;
             sfc.vnfChain.addAll(Arrays.asList(fw, ids, nat, dpi));
-
-            // Link ngược để thuật toán MSH-OR Giai đoạn 1 thấy được mức độ ưu tiên
-            if(!fw.sharedBySFCs.contains(sfc)) fw.sharedBySFCs.add(sfc);
-            if(!ids.sharedBySFCs.contains(sfc)) ids.sharedBySFCs.add(sfc);
-            if(!nat.sharedBySFCs.contains(sfc)) nat.sharedBySFCs.add(sfc);
-            if(!dpi.sharedBySFCs.contains(sfc)) dpi.sharedBySFCs.add(sfc);
-
+            fw.sharedBySFCs.add(sfc); ids.sharedBySFCs.add(sfc); nat.sharedBySFCs.add(sfc); dpi.sharedBySFCs.add(sfc);
             list.add(sfc);
         }
         return list;
     }
 
-    // HÀM BỔ TRỢ 2: Reset trạng thái VNF về nút lỗi ban đầu
     private static void resetVNFsForComparison(List<VNFInstance> vnfs, PhysicalNode failedNode) {
         for (VNFInstance v : vnfs) {
             if (v.hostNode != null) {

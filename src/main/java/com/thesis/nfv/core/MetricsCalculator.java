@@ -98,7 +98,7 @@ public class MetricsCalculator {
         String dstPod = getPodId(dst.id);
 
         if (srcPod.equals(dstPod)) {
-            // Cùng Pod: 10 + 10 = 20ms
+            // Cùng Pod: 4 + 4 = 8ms
             return 8.0;
         } else {
             // Khác Pod: Edge -> Agg -> Core -> Agg -> Edge

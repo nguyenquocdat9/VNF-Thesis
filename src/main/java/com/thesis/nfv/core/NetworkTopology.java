@@ -11,11 +11,6 @@ public class NetworkTopology {
     public List<PhysicalNode> allNodes = new ArrayList<>();
     public List<PhysicalEdge> allEdges = new ArrayList<>();
 
-    // Hàm xây dựng Fat-Tree tổng quát với tham số k
-    public void buildFatTree(int k) {
-        buildFatTreeCustom(k, 50.0); // Mặc định là 50 như cũ
-    }
-
     // HÀM MỚI: Cho phép tùy chỉnh CPU của Edge Node để làm thực nghiệm
     public void buildFatTreeCustom(int k, double edgeCpuCap) {
         if (k % 2 != 0) throw new IllegalArgumentException("k phải là số chẵn!");
