@@ -22,6 +22,7 @@ import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.sdn.HostFactory;
 import org.cloudbus.cloudsim.sdn.HostFactorySimple;
 import org.cloudbus.cloudsim.sdn.SDNBroker;
+import org.cloudbus.cloudsim.sdn.nos.MshOrNOS;
 import org.cloudbus.cloudsim.sdn.workload.Workload;
 import org.cloudbus.cloudsim.sdn.monitor.power.PowerUtilizationMaxHostInterface;
 import org.cloudbus.cloudsim.sdn.nos.NetworkOperatingSystem;
@@ -45,11 +46,9 @@ import org.cloudbus.cloudsim.sdn.policies.vmallocation.VmAllocationPolicyMipsMos
  * @since CloudSimSDN 1.0
  */
 public class SimpleExample {
-	protected static String physicalTopologyFile 	= "dataset-energy/energy-physical.json";
-	protected static String deploymentFile 		= "dataset-energy/energy-virtual.json";
-	protected static String [] workload_files 			= { 
-		"dataset-energy/energy-workload.csv"
-		};
+	protected static String physicalTopologyFile 	= "example-sfc/fat-tree-k10-physical.json";
+	protected static String deploymentFile 		= "example-sfc/fat-tree-k10-virtual.json";
+	protected static String [] workload_files 			= {"example-sfc/fat-tree-k10-workload.csv"};
 	
 	protected static List<String> workloads;
 	
@@ -106,7 +105,7 @@ public class SimpleExample {
 			CloudSim.init(num_user, calendar, trace_flag);
 			
 			VmAllocationPolicyFactory vmAllocationFac = null;
-			NetworkOperatingSystem nos = new NetworkOperatingSystemSimple();
+			NetworkOperatingSystem nos = new MshOrNOS();
 			HostFactory hsFac = new HostFactorySimple();
 			LinkSelectionPolicy ls = null;
 			switch(vmAllocPolicy) {
@@ -171,7 +170,8 @@ public class SimpleExample {
 			// Sixth step: Starts the simulation
 			if(!SimpleExample.logEnabled) 
 				Log.disable();
-			
+
+			CloudSim.terminateSimulation(500.0);
 			double finishTime = CloudSim.startSimulation();
 			CloudSim.stopSimulation();
 			Log.enable();

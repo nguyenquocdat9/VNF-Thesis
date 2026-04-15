@@ -1,0 +1,59 @@
+{
+  "nodes": [
+    {
+      "name": "client_vm",
+      "type": "vm",
+      "size": 1000,
+      "pes": 2,
+      "mips": 1000,
+      "ram": 512,
+      "bw": 1000
+    },
+    {
+      "name": "vnf_fw",
+      "type": "firewall",
+      "size": 1000,
+      "pes": 2,
+      "mips": 1000,
+      "mipoper": 100,
+      "ram": 512,
+      "bw": 1000
+    },
+    {
+      "name": "vnf_ids",
+      "type": "IDS",
+      "size": 1000,
+      "pes": 2,
+      "mips": 1000,
+      "mipoper": 100,
+      "ram": 512,
+      "bw": 1000
+    }
+  ],
+  "links": [
+    {
+      "name": "default",
+      "source": "client_vm",
+      "destination": "vnf_fw",
+      "bandwidth": 10000000,
+      "latency": 0.1
+    },
+    {
+      "name": "l_fw_ids",
+      "source": "vnf_fw",
+      "destination": "vnf_ids",
+      "bandwidth": 10000000,
+      "latency": 0.1
+    }
+  ],
+  "policies": [
+    {
+      "name": "policy1",
+      "source": "client_vm",
+      "destination": "vnf_ids",
+      "flowname": "default",
+      "sfc": ["vnf_fw", "vnf_ids"],
+      "expected_time": 100.0
+    }
+  ]
+}

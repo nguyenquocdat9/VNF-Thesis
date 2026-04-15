@@ -341,7 +341,7 @@ public class Vm {
 	 * 
 	 * @param numberOfPes the new number of pes
 	 */
-	protected void setNumberOfPes(int numberOfPes) {
+    public void setNumberOfPes(int numberOfPes) {
 		this.numberOfPes = numberOfPes;
 	}
 
