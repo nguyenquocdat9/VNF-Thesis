@@ -1,59 +1,64 @@
 {
   "nodes": [
-    {
-      "name": "client_vm",
-      "type": "vm",
-      "size": 1000,
-      "pes": 2,
-      "mips": 1000,
-      "ram": 512,
-      "bw": 1000
-    },
-    {
-      "name": "vnf_fw",
-      "type": "firewall",
-      "size": 1000,
-      "pes": 2,
-      "mips": 1000,
-      "mipoper": 100,
-      "ram": 512,
-      "bw": 1000
-    },
-    {
-      "name": "vnf_ids",
-      "type": "IDS",
-      "size": 1000,
-      "pes": 2,
-      "mips": 1000,
-      "mipoper": 100,
-      "ram": 512,
-      "bw": 1000
-    }
+    {"name": "client1", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "client2", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "client3", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "client4", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "server1", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "server2", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "server3", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "server4", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
+    {"name": "vnf_fw",  "type": "firewall",    "size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000},
+    {"name": "vnf_ids", "type": "IDS",         "size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000},
+    {"name": "vnf_lb",  "type": "loadbalancer","size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000},
+    {"name": "vnf_nat", "type": "NAT",         "size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000}
   ],
   "links": [
-    {
-      "name": "default",
-      "source": "client_vm",
-      "destination": "vnf_fw",
-      "bandwidth": 10000000,
-      "latency": 0.1
-    },
-    {
-      "name": "l_fw_ids",
-      "source": "vnf_fw",
-      "destination": "vnf_ids",
-      "bandwidth": 10000000,
-      "latency": 0.1
-    }
+    {"name": "l_c1_fw",      "source": "client1", "destination": "vnf_fw",  "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_c2_fw",      "source": "client2", "destination": "vnf_fw",  "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_c3_fw",      "source": "client3", "destination": "vnf_fw",  "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_c4_fw",      "source": "client4", "destination": "vnf_fw",  "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_fw_ids",     "source": "vnf_fw",  "destination": "vnf_ids", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_fw_nat",     "source": "vnf_fw",  "destination": "vnf_nat", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_fw_lb",      "source": "vnf_fw",  "destination": "vnf_lb",  "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_ids_lb",     "source": "vnf_ids", "destination": "vnf_lb",  "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_ids_nat",    "source": "vnf_ids", "destination": "vnf_nat", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_nat_ids",    "source": "vnf_nat", "destination": "vnf_ids", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_nat_lb",     "source": "vnf_nat", "destination": "vnf_lb",  "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_lb_nat",     "source": "vnf_lb",  "destination": "vnf_nat", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_lb_s1",      "source": "vnf_lb",  "destination": "server1", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_ids_s2",     "source": "vnf_ids", "destination": "server2", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_nat_s3",     "source": "vnf_nat", "destination": "server3", "bandwidth": 10000000, "latency": 1.0},
+    {"name": "l_lb_s4",      "source": "vnf_lb",  "destination": "server4", "bandwidth": 10000000, "latency": 1.0}
   ],
   "policies": [
     {
-      "name": "policy1",
-      "source": "client_vm",
-      "destination": "vnf_ids",
-      "flowname": "default",
-      "sfc": ["vnf_fw", "vnf_ids"],
-      "expected_time": 100.0
+      "name": "sfc1",
+      "source": "client1", "destination": "server1",
+      "flowname": "l_c1_fw",
+      "sfc": ["vnf_fw", "vnf_ids", "vnf_lb"],
+      "expected_time": 500.0
+    },
+    {
+      "name": "sfc2",
+      "source": "client2", "destination": "server2",
+      "flowname": "l_c2_fw",
+      "sfc": ["vnf_fw", "vnf_nat", "vnf_ids"],
+      "expected_time": 500.0
+    },
+    {
+      "name": "sfc3",
+      "source": "client3", "destination": "server3",
+      "flowname": "l_c3_fw",
+      "sfc": ["vnf_fw", "vnf_lb", "vnf_nat"],
+      "expected_time": 500.0
+    },
+    {
+      "name": "sfc4",
+      "source": "client4", "destination": "server4",
+      "flowname": "l_c4_fw",
+      "sfc": ["vnf_fw", "vnf_ids", "vnf_nat", "vnf_lb"],
+      "expected_time": 500.0
     }
   ]
 }

@@ -323,7 +323,7 @@ public class Vm {
 	 * 
 	 * @param mips the new mips
 	 */
-	protected void setMips(double mips) {
+    public void setMips(double mips) {
 		this.mips = mips;
 	}
 

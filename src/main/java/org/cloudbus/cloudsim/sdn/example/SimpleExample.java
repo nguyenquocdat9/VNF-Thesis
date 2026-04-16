@@ -22,11 +22,9 @@ import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.sdn.HostFactory;
 import org.cloudbus.cloudsim.sdn.HostFactorySimple;
 import org.cloudbus.cloudsim.sdn.SDNBroker;
-import org.cloudbus.cloudsim.sdn.nos.MshOrNOS;
+import org.cloudbus.cloudsim.sdn.nos.*;
 import org.cloudbus.cloudsim.sdn.workload.Workload;
 import org.cloudbus.cloudsim.sdn.monitor.power.PowerUtilizationMaxHostInterface;
-import org.cloudbus.cloudsim.sdn.nos.NetworkOperatingSystem;
-import org.cloudbus.cloudsim.sdn.nos.NetworkOperatingSystemSimple;
 import org.cloudbus.cloudsim.sdn.parsers.PhysicalTopologyParser;
 import org.cloudbus.cloudsim.sdn.physicalcomponents.SDNDatacenter;
 import org.cloudbus.cloudsim.sdn.physicalcomponents.switches.Switch;
@@ -72,6 +70,12 @@ public class SimpleExample {
 	@SuppressWarnings("unused")
 	public static void main(String[] args) {
 
+		try {
+			java.io.PrintStream ps = new java.io.PrintStream(
+					new java.io.FileOutputStream("simulation_log.txt"));
+			System.setOut(ps);
+		} catch (Exception e) { e.printStackTrace(); }
+
 		String policyName = "LFF";
 		workloads = new ArrayList<String>();
 		
@@ -105,7 +109,7 @@ public class SimpleExample {
 			CloudSim.init(num_user, calendar, trace_flag);
 			
 			VmAllocationPolicyFactory vmAllocationFac = null;
-			NetworkOperatingSystem nos = new MshOrNOS();
+			NetworkOperatingSystem nos = new RoundRobinNOS();
 			HostFactory hsFac = new HostFactorySimple();
 			LinkSelectionPolicy ls = null;
 			switch(vmAllocPolicy) {
