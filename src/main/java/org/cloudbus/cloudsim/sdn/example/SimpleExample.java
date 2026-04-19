@@ -175,7 +175,7 @@ public class SimpleExample {
 			if(!SimpleExample.logEnabled) 
 				Log.disable();
 
-			CloudSim.terminateSimulation(500.0);
+			CloudSim.terminateSimulation(200.0);
 			double finishTime = CloudSim.startSimulation();
 			CloudSim.stopSimulation();
 			Log.enable();
