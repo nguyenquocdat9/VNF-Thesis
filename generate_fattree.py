@@ -1,7 +1,7 @@
 import json
 import os
 
-k = 10
+k = 6
 num_pods = k
 num_core = (k // 2) ** 2
 num_agg_per_pod = k // 2
@@ -76,8 +76,8 @@ for pod in range(num_pods):
             nodes.append({
                 "name": host_name,
                 "type": "host",
-                "pes": 8,
-                "mips": 10000,
+                "pes": 4,
+                "mips": 3000,
                 "ram": 32768,
                 "storage": 1000000,
                 "bw": BW_HOST

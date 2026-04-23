@@ -109,7 +109,7 @@ public class SimpleExample {
 			CloudSim.init(num_user, calendar, trace_flag);
 			
 			VmAllocationPolicyFactory vmAllocationFac = null;
-			NetworkOperatingSystem nos = new RoundRobinNOS();
+			NetworkOperatingSystem nos = new MshOrNOS();
 			HostFactory hsFac = new HostFactorySimple();
 			LinkSelectionPolicy ls = null;
 			switch(vmAllocPolicy) {

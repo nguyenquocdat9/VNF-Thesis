@@ -9,9 +9,9 @@
     {"name": "server3", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
     {"name": "server4", "type": "vm",          "size": 1000, "pes": 1, "mips": 1000, "ram": 512, "bw": 1000},
     {"name": "vnf_fw",  "type": "firewall",    "size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000},
-    {"name": "vnf_ids", "type": "IDS",         "size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000},
+    {"name": "vnf_ids", "type": "IDS",         "size": 1000, "pes": 2, "mips": 800, "mipoper": 100, "ram": 512, "bw": 1000},
     {"name": "vnf_lb",  "type": "loadbalancer","size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000},
-    {"name": "vnf_nat", "type": "NAT",         "size": 1000, "pes": 2, "mips": 1000, "mipoper": 100, "ram": 512, "bw": 1000}
+    {"name": "vnf_nat", "type": "NAT",         "size": 1000, "pes": 2, "mips": 800, "mipoper": 100, "ram": 512, "bw": 1000}
   ],
   "links": [
     {"name": "l_c1_fw",      "source": "client1", "destination": "vnf_fw",  "bandwidth": 10000000, "latency": 1.0},

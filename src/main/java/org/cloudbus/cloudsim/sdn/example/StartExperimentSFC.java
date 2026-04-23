@@ -27,11 +27,9 @@ import org.cloudbus.cloudsim.sdn.HostFactory;
 import org.cloudbus.cloudsim.sdn.HostFactoryOverbookable;
 import org.cloudbus.cloudsim.sdn.HostFactorySimple;
 import org.cloudbus.cloudsim.sdn.SDNBroker;
+import org.cloudbus.cloudsim.sdn.nos.*;
 import org.cloudbus.cloudsim.sdn.workload.Workload;
 import org.cloudbus.cloudsim.sdn.monitor.power.PowerUtilizationMaxHostInterface;
-import org.cloudbus.cloudsim.sdn.nos.NetworkOperatingSystem;
-import org.cloudbus.cloudsim.sdn.nos.NetworkOperatingSystemGroupPriority;
-import org.cloudbus.cloudsim.sdn.nos.NetworkOperatingSystemSimple;
 import org.cloudbus.cloudsim.sdn.parsers.PhysicalTopologyParser;
 import org.cloudbus.cloudsim.sdn.physicalcomponents.SDNDatacenter;
 import org.cloudbus.cloudsim.sdn.physicalcomponents.switches.Switch;
@@ -55,10 +53,10 @@ import org.cloudbus.cloudsim.sdn.policies.vmallocation.VmMigrationPolicy;
  * @since CloudSimSDN 1.0
  */
 public class StartExperimentSFC {
-	protected static String physicalTopologyFile 	= "dataset-energy/energy-physical.json";
-	protected static String deploymentFile 		= "dataset-energy/energy-virtual.json";
+	protected static String physicalTopologyFile 	= "example-sfc/fat-tree-k10-physical.json";
+	protected static String deploymentFile 		= "example-sfc/fat-tree-k10-virtual.json";
 	protected static String [] workload_files 			= { 
-		"dataset-energy/energy-workload.csv",
+		"example-sfc/fat-tree-k10-workload.csv",
 		//"sdn-example-workload-normal-user.csv",	
 		//"sdn-example-workload-prio-user-prio-ch.csv",
 		//"sdn-example-workload-prio-user-normal-ch.csv",
@@ -86,6 +84,7 @@ public class StartExperimentSFC {
 		Random,
 		RandomFlow,
 		MFFBW, MFFCPU,
+		MSHOR, FIRSTFIT, ROUNDROBIN,
 		END
 		}	
 	
@@ -290,7 +289,43 @@ public class StartExperimentSFC {
 				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
 				hostSelectionPolicy = new HostSelectionPolicyMostFull();
 				vmMigrationPolicy = null;
-				break;				
+				break;
+			case MSHOR:
+				vmAllocationFac = new VmAllocationPolicyFactory() {
+					public VmAllocationPolicy create(List<? extends Host> list,
+													 HostSelectionPolicy hostSelectionPolicy,
+													 VmMigrationPolicy vmMigrationPolicy) {
+						return new VmAllocationPolicyCombinedMostFullFirst(list);
+					}
+				};
+				nos = new MshOrNOS();
+				hsFac = new HostFactorySimple();
+				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
+				break;
+			case FIRSTFIT:
+				vmAllocationFac = new VmAllocationPolicyFactory() {
+					public VmAllocationPolicy create(List<? extends Host> list,
+													 HostSelectionPolicy hostSelectionPolicy,
+													 VmMigrationPolicy vmMigrationPolicy) {
+						return new VmAllocationPolicyCombinedMostFullFirst(list);
+					}
+				};
+				nos = new FirstFitNOS();
+				hsFac = new HostFactorySimple();
+				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
+				break;
+			case ROUNDROBIN:
+				vmAllocationFac = new VmAllocationPolicyFactory() {
+					public VmAllocationPolicy create(List<? extends Host> list,
+													 HostSelectionPolicy hostSelectionPolicy,
+													 VmMigrationPolicy vmMigrationPolicy) {
+						return new VmAllocationPolicyCombinedMostFullFirst(list);
+					}
+				};
+				nos = new RoundRobinNOS();
+				hsFac = new HostFactorySimple();
+				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
+				break;
 			default:
 				System.err.println("Choose proper VM placement polilcy!");
 				printUsage();
@@ -323,6 +358,42 @@ public class StartExperimentSFC {
 				Configuration.SFC_AUTOSCALE_ENABLE_SCALE_DOWN_VM = false;
 				Configuration.SFC_AUTOSCALE_ENABLE_BW = true;
 				Configuration.SFC_AUTOSCALE_ENABLE_SCALE_DOWN_BW = true;
+				break;
+			case MSHOR:
+				vmAllocationFac = new VmAllocationPolicyFactory() {
+					public VmAllocationPolicy create(List<? extends Host> list,
+													 HostSelectionPolicy hostSelectionPolicy,
+													 VmMigrationPolicy vmMigrationPolicy) {
+						return new VmAllocationPolicyCombinedMostFullFirst(list);
+					}
+				};
+				nos = new MshOrNOS();
+				hsFac = new HostFactorySimple();
+				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
+				break;
+			case FIRSTFIT:
+				vmAllocationFac = new VmAllocationPolicyFactory() {
+					public VmAllocationPolicy create(List<? extends Host> list,
+													 HostSelectionPolicy hostSelectionPolicy,
+													 VmMigrationPolicy vmMigrationPolicy) {
+						return new VmAllocationPolicyCombinedMostFullFirst(list);
+					}
+				};
+				nos = new FirstFitNOS();
+				hsFac = new HostFactorySimple();
+				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
+				break;
+			case ROUNDROBIN:
+				vmAllocationFac = new VmAllocationPolicyFactory() {
+					public VmAllocationPolicy create(List<? extends Host> list,
+													 HostSelectionPolicy hostSelectionPolicy,
+													 VmMigrationPolicy vmMigrationPolicy) {
+						return new VmAllocationPolicyCombinedMostFullFirst(list);
+					}
+				};
+				nos = new RoundRobinNOS();
+				hsFac = new HostFactorySimple();
+				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
 				break;
 			default:
 				break;
