@@ -56,7 +56,7 @@ public class StartExperimentSFC {
 	protected static String physicalTopologyFile 	= "example-sfc/fat-tree-k10-physical.json";
 	protected static String deploymentFile 		= "example-sfc/fat-tree-k10-virtual.json";
 	protected static String [] workload_files 			= { 
-		"example-sfc/fat-tree-k10-workload.csv",
+		"example-sfc/fat-tree-wiki-workload.csv",
 		//"sdn-example-workload-normal-user.csv",	
 		//"sdn-example-workload-prio-user-prio-ch.csv",
 		//"sdn-example-workload-prio-user-normal-ch.csv",
@@ -314,18 +314,6 @@ public class StartExperimentSFC {
 				hsFac = new HostFactorySimple();
 				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
 				break;
-			case ROUNDROBIN:
-				vmAllocationFac = new VmAllocationPolicyFactory() {
-					public VmAllocationPolicy create(List<? extends Host> list,
-													 HostSelectionPolicy hostSelectionPolicy,
-													 VmMigrationPolicy vmMigrationPolicy) {
-						return new VmAllocationPolicyCombinedMostFullFirst(list);
-					}
-				};
-				nos = new RoundRobinNOS();
-				hsFac = new HostFactorySimple();
-				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
-				break;
 			default:
 				System.err.println("Choose proper VM placement polilcy!");
 				printUsage();
@@ -380,18 +368,6 @@ public class StartExperimentSFC {
 					}
 				};
 				nos = new FirstFitNOS();
-				hsFac = new HostFactorySimple();
-				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
-				break;
-			case ROUNDROBIN:
-				vmAllocationFac = new VmAllocationPolicyFactory() {
-					public VmAllocationPolicy create(List<? extends Host> list,
-													 HostSelectionPolicy hostSelectionPolicy,
-													 VmMigrationPolicy vmMigrationPolicy) {
-						return new VmAllocationPolicyCombinedMostFullFirst(list);
-					}
-				};
-				nos = new RoundRobinNOS();
 				hsFac = new HostFactorySimple();
 				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
 				break;

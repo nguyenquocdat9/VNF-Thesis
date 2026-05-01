@@ -2,80 +2,104 @@ package org.cloudbus.cloudsim.sdn.nos;
 
 import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.sdn.physicalcomponents.SDNHost;
+import org.cloudbus.cloudsim.sdn.sfc.ServiceFunction;
 import org.cloudbus.cloudsim.sdn.sfc.ServiceFunctionChainPolicy;
 import org.cloudbus.cloudsim.sdn.virtualcomponents.SDNVm;
+
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * MshOrScalingPolicy: Chua cac logic tinh toan cho thuat toan MSH-OR.
- * <p>
- * Gom 3 phan chinh:
- * <p>
- *   1. Priority Score: quyet dinh VNF nao nen scale truoc
- * <p>
- *   2. Ham muc tieu P: chon host toi uu de clone VNF
- * <p>
- *   3. Cac ham utility: tinh util, hop count, SFC count
+ * MshOrScalingPolicy - Priority Score 3 tieu chi theo yeu cau thay huong dan.
+ *
+ * =========================================================================
+ * PRIORITY SCORE = a1*C1 + a2*C2 + a3*C3
+ * =========================================================================
+ *
+ * C1 - SLA Failure Rate (ti le SFC dang LOI qua VNF nay)
+ *   C1 = (so SFC vi pham SLA) / (tong SFC qua VNF)
+ *   vi du: vnf_fw 4 SFC, 1 loi  -> C1 = 1/4 = 0.25
+ *          vnf_ids 3 SFC, 2 loi -> C1 = 2/3 = 0.67
+ *
+ * C2 - Priority-Weighted SLA Breach x Resource Pressure
+ *   Tich hop ca muc do vi pham SLA (co priority) lan ap luc tai nguyen CPU.
+ *   buoc 1: weighted_breach = [Sum(pri_i x breach_i) / Sum(pri_i)] / 3.0
+ *   buoc 2: pressure = min(demand / currentMIPS, 2.0) / 2.0  in [0,1]
+ *           demand = util x initMIPS
+ *   buoc 3: C2 = weighted_breach x (1 + pressure) / 2         in [0,1]
+ *   vi du: vnf_fw breach=0.5 pressure=0.90 -> C2 = 0.5x1.90/2 = 0.475
+ *          vnf_ids breach=0.5 pressure=0.40 -> C2 = 0.5x1.40/2 = 0.350
+ *          -> vnf_fw uu tien du breach ngang nhau, vi demand/cap cao hon
+ *
+ * C3 - MIPS Efficiency (so SFC duoc cuu / MIPS bo ra)
+ *   C3 = (so SFC vi pham) / MIPS_required   (normalize)
+ *   vi du: vnf_fw can 261 MIPS cuu 4 SFC (4/261 = 0.01533)
+ *          vnf_ids can 204 MIPS cuu 1 SFC (1/204 = 0.00490)
+ *          -> vnf_fw hieu qua hon 3x -> chon fw truoc
+ *
+ * Trong so: a1=0.35, a2=0.40, a3=0.25
  */
 public class MshOrScalingPolicy {
+
+    // =========================================================
+    // CAU HINH PRIORITY SFC
+    // =========================================================
+
+    static final Map<String, Double> SFC_PRIORITY_MAP = new HashMap<String, Double>() {{
+        put("sfc1", 1.0);  // VIP / real-time
+        put("sfc2", 0.8);  // quan trong
+        put("sfc3", 0.6);  // thong thuong
+        put("sfc4", 0.4);  // background
+        put("sfc5", 0.9);  // payment / critical
+        put("sfc6", 0.3);  // background thap
+    }};
+
+    static final double DEFAULT_PRIORITY = 0.5;
 
     // =========================================================
     // CONSTANTS
     // =========================================================
 
-    /**
-     * He so ham muc tieu P cho chon host clone:
-     * P = ALPHA*Delay + BETA*Load + GAMMA*Cost
-     * <p>
-     * Delay = hopCount * 2ms  (uoc luong do tre mang)
-     * Load  = CPU utilization cua host dich
-     * Cost  = hopCount * 0.1  (chi phi bang thong)
-     */
-    private static final double ALPHA = 0.4; // trong so delay
-    private static final double BETA  = 0.4; // trong so load
-    private static final double GAMMA = 0.2; // trong so cost
+    /** Trong so C1: SLA Failure Rate - do pham vi anh huong */
+    private static final double ALPHA1 = 0.35;
+
+    /** Trong so C2: Priority-Weighted Breach - do muc do khan cap co priority */
+    private static final double ALPHA2 = 0.40;
+
+    /** Trong so C3: MIPS Efficiency - do hieu qua dau tu tai nguyen */
+    private static final double ALPHA3 = 0.25;
+
+    /** Gioi han breach ratio khi tinh C2 (cap = 3.0x SLA threshold) */
+    private static final double MAX_BREACH_CAP = 3.0;
+
+    /** Muc tieu utilization sau Vertical Scale */
+    private static final double TARGET_UTIL = 0.8;
 
     /**
-     * He so Priority Score cho chon VNF scale:
-     * Score = ALPHA_UTIL*util + BETA_SFC*sfc + GAMMA_DELAY*urgency + DELTA_STABILITY*stability
+     * Chuan hoa C3: tuong ung kich ban 4 SFC vi pham, delta = 100 MIPS.
+     * C3_raw = 4/100 = 0.04 -> C3_normalized = 1.0
      */
-    private static final double ALPHA_UTIL      = 0.3; // trong so util
-    private static final double BETA_SFC        = 0.3; // trong so SFC impact
-    private static final double GAMMA_DELAY     = 0.3; // trong so delay urgency
-    private static final double DELTA_STABILITY = 0.1; // trong so on dinh tai
+    private static final double C3_NORM_CAP = 0.04;
 
-    /** Nguong util de phat hien VNF qua tai */
-    public static final double THRESHOLD = 0.7;
+    /** Nguong util de coi VNF la "qua tai" */
+    public static final double THRESHOLD = 0.85;
 
 
     // =========================================================
-    // DATA CLASSES
+    // DATA CLASS
     // =========================================================
 
-    public enum ScalingType { NONE, VERTICAL, HORIZONTAL }
-
-    public static class ScalingDecision {
-        public ScalingType type;
-        public SDNHost     targetHost;
-        public ScalingDecision(ScalingType t, SDNHost h) {
-            this.type = t; this.targetHost = h;
-        }
-    }
-
-    /**
-     * Thong tin mot VNF dang can scale.
-     * Chua du lieu de sap xep va ra quyet dinh.
-     */
     public static class VnfScalingCandidate {
         public SDNVm   vnf;
         public SDNHost host;
         public int     sfcCount;
+        public int     violatedCount;
         public double  utilization;
-        public double  priorityScore; // score tong hop de sap xep
-        public double  delayUrgency;  // muc do khan cap ve delay
+        public double  priorityScore;
 
         public VnfScalingCandidate(SDNVm vnf, SDNHost host,
                                    int sfcCount, double utilization) {
@@ -83,28 +107,18 @@ public class MshOrScalingPolicy {
             this.host          = host;
             this.sfcCount      = sfcCount;
             this.utilization   = utilization;
+            this.violatedCount = 0;
             this.priorityScore = 0;
-            this.delayUrgency  = 0;
         }
     }
 
 
     // =========================================================
-    // VNF SELECTION: PRIORITY SCORE
+    // VNF SELECTION
     // =========================================================
 
     /**
-     * Lay danh sach VNF dang qua tai va sap xep theo Priority Score.
-     * <p>
-     * 4 buoc:
-     * <p>
-     *   1. Thu thap VNF co util >= THRESHOLD
-     * <p>
-     *   2. Tinh maxSfcCount de chuan hoa sfcScore
-     * <p>
-     *   3. Tinh Priority Score cho tung VNF
-     * <p>
-     *   4. Sap xep giam dan: VNF nguy hiem nhat duoc scale truoc
+     * Thu thap VNF qua tai, tinh Priority Score va sap xep GIAM DAN.
      */
     public List<VnfScalingCandidate> getOverloadedVnfsSorted(
             List<SDNHost>                          allHosts,
@@ -112,12 +126,11 @@ public class MshOrScalingPolicy {
 
         List<VnfScalingCandidate> candidates = new ArrayList<>();
 
-        // --- Buoc 1: Thu thap VNF qua tai ---
         for (Object h : allHosts) {
             SDNHost host = (SDNHost) h;
             for (Object vmObj : host.getVmList()) {
-                SDNVm  vm   = (SDNVm) vmObj;
-                if (vm.getMiddleboxType() == null) continue; // bo qua client/server
+                SDNVm vm = (SDNVm) vmObj;
+                if (vm.getMiddleboxType() == null) continue;
 
                 double util = getVmUtilization(vm);
                 if (util < THRESHOLD) continue;
@@ -129,135 +142,197 @@ public class MshOrScalingPolicy {
 
         if (candidates.isEmpty()) return candidates;
 
-        // --- Buoc 2: Tim maxSfcCount de chuan hoa sfcScore ---
-        // Vi du: VNF_FW=4 SFC, VNF_IDS=3 SFC -> maxSfcCount=4
-        //        sfcScore cua VNF_FW = 4/4 = 1.0
-        //        sfcScore cua VNF_IDS = 3/4 = 0.75
-        int maxSfcCount = 1;
         for (VnfScalingCandidate c : candidates) {
-            if (c.sfcCount > maxSfcCount) maxSfcCount = c.sfcCount;
+            c.priorityScore = calculatePriorityScore(c.vnf, c.utilization,
+                    sfcPolicies, false);
         }
 
-        // --- Buoc 3: Tinh Priority Score ---
-        final int finalMax = maxSfcCount;
-        for (VnfScalingCandidate c : candidates) {
-            c.priorityScore = calculatePriorityScore(
-                    c.vnf, c.utilization, c.sfcCount, finalMax, sfcPolicies);
-        }
-
-        // --- Buoc 4: Sap xep giam dan ---
+        // Sap xep giam dan theo score - VNF quan trong nhat o dau
         candidates.sort((a, b) -> Double.compare(b.priorityScore, a.priorityScore));
-
         return candidates;
     }
 
+
+    // =========================================================
+    // PRIORITY SCORE
+    // =========================================================
+
     /**
-     * Tinh Priority Score tong hop cho 1 VNF.
-     * <p>
-     * Score = 0.3*utilScore + 0.3*sfcScore + 0.3*urgency + 0.1*stability
-     * <p>
-     * Giai thich tung thanh phan:
-     * <p>
-     * [utilScore]: Muc do qua tai hien tai
-     *   = min(util, 2.0) / 2.0  (chuan hoa ve [0,1])
-     *   util=0.7 -> 0.35, util=1.0 -> 0.5, util=2.0 -> 1.0
-     * <p>
-     * [sfcScore]: Muc do anh huong den cac chuoi SFC
-     *   = sfcCount / maxSfcCount  (chuan hoa ve [0,1])
-     *   VNF phuc vu nhieu SFC -> score cao -> uu tien scale
-     * <p>
-     * [urgency]: Muc do khan cap ve delay (SLA)
-     *   = avgDelay / delayThreshold  (chuan hoa ve [0,1])
-     *   > 1.0: dang vi pham SLA, rat khan cap
-     *   = 1.0: default khi chua co data
-     * <p>
-     * [stabilityScore]: Tai dang tang hay giam?
-     *   stability = util_recent(2.5s) - util_history(2.5s truoc)
-     *   > 0: dang tang (nguy hiem hon)
-     *   = 0: on dinh
-     *   < 0: dang giam (co the tu phuc hoi)
-     *   Shift ve [0,1]: stability=0 -> 0.5
+     * Tinh Priority Score = a1*C1 + a2*C2 + a3*C3.
+     *
+     * @param vnf       VNF can danh gia
+     * @param util      CPU utilization hien tai (window 15s)
+     * @param policies  danh sach SFC policies
+     * @param printLog  true -> in log [PRIORITY]
      */
     public double calculatePriorityScore(
             SDNVm   vnf,
-            double  utilization,
-            int     sfcCount,
-            int     maxSfcCount,
-            Collection<ServiceFunctionChainPolicy> sfcPolicies) {
+            double  util,
+            Collection<ServiceFunctionChainPolicy> policies,
+            boolean printLog) {
 
-        // Thanh phan 1: Util score
-        double utilScore = Math.min(utilization, 2.0) / 2.0;
+        // --- Thu thap thong tin SFC di qua VNF ---
+        int    totalSfc            = 0;
+        int    violatedSfc         = 0;
+        double sumWeightedBreach   = 0.0;  // Sum(pri * breach) cho SFC vi pham
+        double sumViolatedPriority = 0.0;  // Sum(pri) cho SFC vi pham
 
-        // Thanh phan 2: SFC impact score
-        double sfcScore = maxSfcCount > 0
-                ? (double) sfcCount / maxSfcCount
-                : 0;
-
-        // Thanh phan 3: Delay urgency
-        double delayUrgency = 1.0; // default neu chua co data
-        double maxUrgency   = 0;
-        int    sfcWithData  = 0;
-
-        for (ServiceFunctionChainPolicy p : sfcPolicies) {
+        for (ServiceFunctionChainPolicy p : policies) {
             if (!p.isSFIncludedInChain(vnf.getId())) continue;
+            totalSfc++;
+
+            double sfcPri    = SFC_PRIORITY_MAP.getOrDefault(p.getName(), DEFAULT_PRIORITY);
             double avgDelay  = p.getMonitoredDelayAverage();
             double threshold = p.getDelayThresholdMax();
-            if (avgDelay > 0 && threshold > 0) {
-                double urgency = avgDelay / threshold;
-                if (urgency > maxUrgency) maxUrgency = urgency;
-                sfcWithData++;
+            boolean violated = false;
+            double  breach   = 0.0;
+
+            if (avgDelay < 0) {
+                // Fallback: chua co delay data, util > 1.0 -> vi pham
+                if (util > 1.0) {
+                    violated = true;
+                    breach   = util;
+                }
+            } else if (threshold > 0) {
+                breach = avgDelay / threshold;
+                if (breach > 1.0) violated = true;
+            }
+
+            if (violated) {
+                violatedSfc++;
+                double cappedBreach = Math.min(breach, MAX_BREACH_CAP);
+                sumWeightedBreach   += sfcPri * cappedBreach;
+                sumViolatedPriority += sfcPri;
             }
         }
-        if (sfcWithData > 0) {
-            delayUrgency = Math.min(maxUrgency, 3.0) / 3.0; // cap o 1.0 sau khi chuan hoa
+
+        // -----------------------------------------------------------
+        // C1 - SLA Failure Rate
+        // -----------------------------------------------------------
+        // C1 = so SFC vi pham / tong SFC qua VNF
+        // VNF nao co ty le SFC bi loi cao hon se duoc uu tien scale.
+        // vi du: vnf_fw 4 SFC 1 loi -> C1 = 0.25
+        //        vnf_ids 3 SFC 2 loi -> C1 = 0.67 (uu tien hon)
+        double C1 = totalSfc > 0 ? (double) violatedSfc / totalSfc : 0.0;
+
+        // -----------------------------------------------------------
+        // C2 - Priority-Weighted SLA Breach x Resource Pressure
+        // -----------------------------------------------------------
+        // Tich hop 2 yeu to:
+        //   (a) muc do vi pham SLA co priority: weighted_breach
+        //   (b) ap luc tai nguyen CPU: demand / currentMIPS
+        //
+        // Cong thuc:
+        //   weighted_breach = [Sum(pri_i * breach_i) / Sum(pri_i)] / MAX_BREACH_CAP
+        //   pressure        = min(demand / currentMIPS, 2.0) / 2.0   in [0, 1]
+        //   C2              = weighted_breach * (1 + pressure) / 2    in [0, 1]
+        //
+        // Y nghia: VNF nao vua co SFC vi pham nang (priority cao)
+        //          VUNG co demand vuot capacity nhieu -> C2 cao -> uu tien scale truoc.
+        //
+        // vi du phan biet:
+        //   vnf_fw:  weighted_breach=0.50, demand/cap=1.80 -> pressure=0.90
+        //            C2 = 0.50 * (1+0.90)/2 = 0.475
+        //   vnf_ids: weighted_breach=0.50, demand/cap=1.20 -> pressure=0.60
+        //            C2 = 0.50 * (1+0.60)/2 = 0.400
+        //   -> vnf_fw duoc uu tien du breach bang nhau, vi demand/cap cao hon
+        double C2 = 0.0;
+        if (sumViolatedPriority > 0) {
+            // Buoc 1: weighted breach (normalized, in [0,1])
+            double avgWeightedBreach = sumWeightedBreach / sumViolatedPriority;
+            double weightedBreach    = Math.min(avgWeightedBreach / MAX_BREACH_CAP, 1.0);
+
+            // Buoc 2: resource pressure = demand / currentMIPS
+            // Su dung initMIPS de tinh demand (tranh circular dependency sau scale)
+            double pressure = 0.5; // gia tri mac dinh khi khong phai ServiceFunction
+            if (vnf instanceof ServiceFunction) {
+                ServiceFunction sf = (ServiceFunction) vnf;
+                double demand      = util * sf.getInitialMips(); // luong CPU can thuc su
+                double currentMips = sf.getMips();               // capacity hien tai
+                if (currentMips > 0) {
+                    // Normalize: cap tai 2.0 (200% overload), scale xuong [0,1]
+                    pressure = Math.min(demand / currentMips, 2.0) / 2.0;
+                }
+            }
+
+            // Buoc 3: nhan hai yeu to, normalize ve [0,1]
+            // (1 + pressure) in [1, 2] -> chia 2 -> in [0.5, 1.0]
+            // * weightedBreach in [0, 1] -> ket qua in [0, 1]
+            C2 = weightedBreach * (1.0 + pressure) / 2.0;
         }
 
-        // Thanh phan 4: Load stability
-        double utilRecent  = vnf.getMonitoredUtilizationCPU(
-                CloudSim.clock() - 2.5, CloudSim.clock());
-        double utilHistory = vnf.getMonitoredUtilizationCPU(
-                CloudSim.clock() - 5.0, CloudSim.clock() - 2.5);
-        double stability      = utilRecent - utilHistory;
-        double stabilityScore = Math.max(0, Math.min(stability + 0.5, 1.0));
+        // -----------------------------------------------------------
+        // C3 - MIPS Efficiency
+        // -----------------------------------------------------------
+        // C3 = (so SFC vi pham) / MIPS_required (normalized)
+        // Khi host chi du MIPS cho 1 trong 2 VNF:
+        //   chon VNF nao "dang hon" tren moi MIPS bo ra.
+        // vi du thay de xuat:
+        //   vnf_fw: 261 MIPS, 4 SFC -> 4/261 = 0.01533
+        //   vnf_ids: 204 MIPS, 1 SFC -> 1/204 = 0.00490
+        //   -> vnf_fw hieu qua hon 3x -> C3(fw) >> C3(ids)
+        double C3 = 0.0;
+        if (vnf instanceof ServiceFunction && violatedSfc > 0) {
+            ServiceFunction sf  = (ServiceFunction) vnf;
+            double initMips     = sf.getInitialMips();
+            double demand       = util * initMips;
+            double requiredMips = demand / TARGET_UTIL;
+            double deltaMips    = requiredMips - sf.getMips();
 
-        // Tong hop
-        double score = ALPHA_UTIL      * utilScore
-                + BETA_SFC        * sfcScore
-                + GAMMA_DELAY     * delayUrgency
-                + DELTA_STABILITY * stabilityScore;
+            if (deltaMips > 0) {
+                // C3_raw = SFC_violated / delta_MIPS
+                double c3Raw = (double) violatedSfc / deltaMips;
+                // Normalize: C3_raw / C3_NORM_CAP (0.04), clamp toi 1.0
+                C3 = Math.min(c3Raw / C3_NORM_CAP, 1.0);
+            } else if (violatedSfc > 0) {
+                // MIPS da du nhung van vi pham (truong hop hiem)
+                C3 = 0.5;
+            }
+        }
 
-        System.out.printf("%.2f: [PRIORITY] VNF %-10s | " +
-                        "util=%.3f(%.2f) | SFC=%d/%d(%.2f) | " +
-                        "urgency=%.3f | stability=%.3f(%.2f) | score=%.4f%n",
-                CloudSim.clock(), vnf.getName(),
-                utilization,  utilScore,
-                sfcCount, maxSfcCount, sfcScore,
-                delayUrgency,
-                stability, stabilityScore,
-                score);
+        // -----------------------------------------------------------
+        // Tong hop score
+        // -----------------------------------------------------------
+        double score = ALPHA1 * C1 + ALPHA2 * C2 + ALPHA3 * C3;
+
+        if (printLog) {
+            // Tinh lai pressure chi de in log (da tinh trong C2 o tren)
+            double logPressure = 0.5;
+            if (vnf instanceof ServiceFunction) {
+                ServiceFunction sf = (ServiceFunction) vnf;
+                double demand      = util * sf.getInitialMips();
+                double currentMips = sf.getMips();
+                if (currentMips > 0)
+                    logPressure = Math.min(demand / currentMips, 2.0) / 2.0;
+            }
+            System.out.printf(
+                    "%.2f: [PRIORITY] VNF %-10s | " +
+                            "C1=%.2f(%d/%d SFC) | C2=%.3f(breach=w-SLA x pres=%.2f) | C3=%.3f(mips-eff) | " +
+                            "score=%.4f%n",
+                    CloudSim.clock(), vnf.getName(),
+                    C1, violatedSfc, totalSfc,
+                    C2, logPressure, C3,
+                    score);
+        }
 
         return score;
     }
 
 
     // =========================================================
-    // HOST SELECTION: HAM MUC TIEU P
+    // HOST SELECTION - Ham muc tieu P
     // =========================================================
 
     /**
-     * Tim host toi uu de clone VNF sang, loai tru cac host da dung.
-     * <p>
-     * Ham P = ALPHA*Delay + BETA*Load + GAMMA*Cost
-     *   -> Chon host co P nho nhat (gan + nhe + re)
-     * <p>
-     * Loai tru:
-     *   - Host nguon (src)
-     *   - Host da duoc dung trong cung 1 cycle (excludedHostIds)
-     *   - Host qua tai (util >= THRESHOLD)
-     *   - Host khong du MIPS (availMips < 300)
+     * Tim host toi uu de clone VNF sang (Horizontal Scale).
+     *
+     * P(src, dst) = 0.4*D + 0.4*L + 0.2*C  -> chon P nho nhat
+     *   D = hop_count * 2   (do tre mang, ms)
+     *   L = CPU utilization host dich
+     *   C = hop_count * 0.1 (chi phi bang thong)
      */
     public SDNHost findBestTargetExcluding(
-            SDNHost src,
+            SDNHost                                src,
             List<SDNHost>                          allHosts,
             Collection<ServiceFunctionChainPolicy> sfcPolicies,
             Set<Integer>                           excludedHostIds) {
@@ -274,135 +349,86 @@ public class MshOrScalingPolicy {
             if (getCpuUtilization(candidate, sfcPolicies) >= THRESHOLD) continue;
             if (candidate.getAvailableMips() < 300) continue;
 
-            double p = calculateP(src, candidate, sfcPolicies);
+            double hopCount = estimateHopCount(src, candidate);
+            double D = hopCount * 2.0;
+            double L = getCpuUtilization(candidate, sfcPolicies);
+            double C = hopCount * 0.1;
+            double p = 0.4 * D + 0.4 * L + 0.2 * C;
+
             if (p < minP) {
                 minP     = p;
                 bestHost = candidate;
             }
         }
 
+        if (bestHost != null) {
+            double hop = estimateHopCount(src, bestHost);
+            System.out.printf("       [P-host] best=%-22s | hop=%.0f | P=%.3f%n",
+                    bestHost.getName(), hop, minP);
+        }
+
         return bestHost;
     }
 
     /**
-     * Tinh ham muc tieu P cho 1 cap (src, dst).
-     * <p>
-     * P = ALPHA * Delay + BETA * Load + GAMMA * Cost
-     * <p>
-     * Delay: uoc luong do tre mang qua hop count
-     *   Cung edge switch:  2 hops -> 4ms
-     *   Cung pod:          4 hops -> 8ms
-     *   Khac pod:          6 hops -> 12ms
-     * <p>
-     * Load: CPU utilization cua host dich (co SFC sharing factor)
-     * <p>
-     * Cost: chi phi bang thong ti le voi hop count
-     */
-    private double calculateP(
-            SDNHost src,
-            SDNHost dst,
-            Collection<ServiceFunctionChainPolicy> sfcPolicies) {
-
-        double hopCount = estimateHopCount(src, dst);
-        double delay    = hopCount * 2.0;
-        double load     = getCpuUtilization(dst, sfcPolicies);
-        double cost     = hopCount * 0.1;
-
-        return ALPHA * delay + BETA * load + GAMMA * cost;
-    }
-
-    /**
-     * Uoc tinh hop count dua tren naming convention: host-p{pod}-e{edge}-h{h}
-     * <p>
-     * Fat-Tree routing:
-     *   Cung edge:  2 hops (host -> edge -> host)
-     *   Cung pod:   4 hops (host -> edge -> agg -> edge -> host)
-     *   Khac pod:   6 hops (host -> edge -> agg -> core -> agg -> edge -> host)
+     * Uoc luong hop count theo naming convention Fat-Tree: "host-p{pod}-e{edge}-h{h}"
+     * Cung edge switch -> 2 hops
+     * Cung pod, khac edge -> 4 hops
+     * Khac pod -> 6 hops
      */
     private double estimateHopCount(SDNHost h1, SDNHost h2) {
         try {
-            String[] n1 = h1.getName().split("-"); // ["host","p0","e0","h0"]
+            String[] n1 = h1.getName().split("-");
             String[] n2 = h2.getName().split("-");
-            if (!n1[1].equals(n2[1])) return 6.0; // khac pod
-            if (!n1[2].equals(n2[2])) return 4.0; // cung pod, khac edge
-            return 2.0;                             // cung edge
+            if (!n1[1].equals(n2[1])) return 6.0;
+            if (!n1[2].equals(n2[2])) return 4.0;
+            return 2.0;
         } catch (Exception e) {
-            return 4.0; // default
+            return 4.0;
         }
     }
 
 
     // =========================================================
-    // CPU UTILIZATION
+    // UTILIZATION HELPERS
     // =========================================================
 
     /**
-     * Lay util thuc te cua 1 VM trong window 5 giay gan nhat.
-     * = MIs_processed / (MIPS_allocated * timeWindow)
+     * Lay CPU utilization cua VNF trong window 15 giay gan nhat.
      */
     public double getVmUtilization(SDNVm vm) {
         return vm.getMonitoredUtilizationCPU(
-                CloudSim.clock() - 5.0, CloudSim.clock());
+                CloudSim.clock() - 15.0, CloudSim.clock());
     }
 
     /**
-     * Tinh CPU utilization cua 1 host, co tinh den VNF Sharing.
-     * <p>
-     * SFC Sharing Factor:
-     *   1 SFC  -> factor = 1.0
-     *   2 SFCs -> factor = 1.5  (1 + 1*0.5)
-     *   3 SFCs -> factor = 2.0  (1 + 2*0.5)
-     *   4 SFCs -> factor = 2.5  (1 + 3*0.5)
-     * <p>
-     * Muc dich: phan anh dung ap luc tai thuc te khi 1 VNF phuc vu nhieu SFC.
-     * Ket qua co the > 1.0 (> 100%) - day la chi so ap luc tai, khong phai util vat ly.
+     * Tinh CPU utilization cua host co tinh den Sharing Factor.
+     * VNF phuc vu nhieu SFC -> tai thuc te cao hon.
+     * Factor = 1 + (sfcCount - 1) * 0.5
      */
     public double getCpuUtilization(
             SDNHost host,
             Collection<ServiceFunctionChainPolicy> sfcPolicies) {
 
         if (host.getVmList().isEmpty()) return 0;
-
-        double totalUsed      = 0;
-        double totalAllocated = 0;
+        double totalUsed = 0, totalAllocated = 0;
 
         for (Object vmObj : host.getVmList()) {
             SDNVm  vm        = (SDNVm) vmObj;
             double allocated = vm.getMips() * vm.getNumberOfPes();
             double baseUtil  = getVmUtilization(vm);
+            int    sfcCount  = countSFCsUsingVm(vm.getId(), sfcPolicies);
+            double factor    = sfcCount <= 1 ? 1.0 : 1.0 + (sfcCount - 1) * 0.5;
 
-            int    sfcCount      = countSFCsUsingVm(vm.getId(), sfcPolicies);
-            double sharingFactor = sfcCount <= 1 ? 1.0
-                    : 1.0 + (sfcCount - 1) * 0.5;
-
-            totalUsed      += baseUtil * sharingFactor * allocated;
+            totalUsed      += baseUtil * factor * allocated;
             totalAllocated += allocated;
         }
 
         return totalAllocated > 0 ? totalUsed / totalAllocated : 0;
     }
-
-    /** Fallback: tinh util host khong co SFC info */
-    public double getCpuUtilization(SDNHost host) {
-        if (host.getVmList().isEmpty()) return 0;
-        double totalUsed = 0, totalAllocated = 0;
-        for (Object vmObj : host.getVmList()) {
-            SDNVm  vm        = (SDNVm) vmObj;
-            double allocated = vm.getMips() * vm.getNumberOfPes();
-            totalUsed      += getVmUtilization(vm) * allocated;
-            totalAllocated += allocated;
-        }
-        return totalAllocated > 0 ? totalUsed / totalAllocated : 0;
-    }
-
-
-    // =========================================================
-    // HELPERS
-    // =========================================================
 
     /**
-     * Dem so SFC dang di qua VM co id = vmId.
-     * Dung de tinh SFC sharing factor va priority score.
+     * Dem so SFC dang di qua VNF co vmId nay.
      */
     public int countSFCsUsingVm(
             int vmId,
@@ -410,9 +436,8 @@ public class MshOrScalingPolicy {
 
         if (sfcPolicies == null) return 1;
         int count = 0;
-        for (ServiceFunctionChainPolicy policy : sfcPolicies) {
-            if (policy.isSFIncludedInChain(vmId)) count++;
-        }
+        for (ServiceFunctionChainPolicy p : sfcPolicies)
+            if (p.isSFIncludedInChain(vmId)) count++;
         return count;
     }
 }

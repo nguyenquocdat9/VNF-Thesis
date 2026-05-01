@@ -46,7 +46,7 @@ import org.cloudbus.cloudsim.sdn.policies.vmallocation.VmAllocationPolicyMipsMos
 public class SimpleExample {
 	protected static String physicalTopologyFile 	= "example-sfc/fat-tree-k10-physical.json";
 	protected static String deploymentFile 		= "example-sfc/fat-tree-k10-virtual.json";
-	protected static String [] workload_files 			= {"example-sfc/fat-tree-k10-workload.csv"};
+	protected static String [] workload_files 			= {"example-sfc/fat-tree-wiki-workload.csv"};
 	
 	protected static List<String> workloads;
 	
@@ -109,7 +109,7 @@ public class SimpleExample {
 			CloudSim.init(num_user, calendar, trace_flag);
 			
 			VmAllocationPolicyFactory vmAllocationFac = null;
-			NetworkOperatingSystem nos = new MshOrNOS();
+			NetworkOperatingSystem nos = new QueueFirstNOS();
 			HostFactory hsFac = new HostFactorySimple();
 			LinkSelectionPolicy ls = null;
 			switch(vmAllocPolicy) {
@@ -175,7 +175,7 @@ public class SimpleExample {
 			if(!SimpleExample.logEnabled) 
 				Log.disable();
 
-			CloudSim.terminateSimulation(200.0);
+			CloudSim.terminateSimulation(250.0);
 			double finishTime = CloudSim.startSimulation();
 			CloudSim.stopSimulation();
 			Log.enable();
