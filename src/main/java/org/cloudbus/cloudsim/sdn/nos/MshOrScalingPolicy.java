@@ -11,7 +11,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * MshOrScalingPolicy - Priority Score 3 tieu chi theo yeu cau thay huong dan.
@@ -320,76 +319,6 @@ public class MshOrScalingPolicy {
 
 
     // =========================================================
-    // HOST SELECTION - Ham muc tieu P
-    // =========================================================
-
-    /**
-     * Tim host toi uu de clone VNF sang (Horizontal Scale).
-     *
-     * P(src, dst) = 0.4*D + 0.4*L + 0.2*C  -> chon P nho nhat
-     *   D = hop_count * 2   (do tre mang, ms)
-     *   L = CPU utilization host dich
-     *   C = hop_count * 0.1 (chi phi bang thong)
-     */
-    public SDNHost findBestTargetExcluding(
-            SDNHost                                src,
-            List<SDNHost>                          allHosts,
-            Collection<ServiceFunctionChainPolicy> sfcPolicies,
-            Set<Integer>                           excludedHostIds) {
-
-        SDNHost bestHost = null;
-        double  minP     = Double.MAX_VALUE;
-
-        for (Object h : allHosts) {
-            SDNHost candidate = (SDNHost) h;
-
-            if (candidate.getId() == src.getId()) continue;
-            if (excludedHostIds != null
-                    && excludedHostIds.contains(candidate.getId())) continue;
-            if (getCpuUtilization(candidate, sfcPolicies) >= THRESHOLD) continue;
-            if (candidate.getAvailableMips() < 300) continue;
-
-            double hopCount = estimateHopCount(src, candidate);
-            double D = hopCount * 2.0;
-            double L = getCpuUtilization(candidate, sfcPolicies);
-            double C = hopCount * 0.1;
-            double p = 0.4 * D + 0.4 * L + 0.2 * C;
-
-            if (p < minP) {
-                minP     = p;
-                bestHost = candidate;
-            }
-        }
-
-        if (bestHost != null) {
-            double hop = estimateHopCount(src, bestHost);
-            System.out.printf("       [P-host] best=%-22s | hop=%.0f | P=%.3f%n",
-                    bestHost.getName(), hop, minP);
-        }
-
-        return bestHost;
-    }
-
-    /**
-     * Uoc luong hop count theo naming convention Fat-Tree: "host-p{pod}-e{edge}-h{h}"
-     * Cung edge switch -> 2 hops
-     * Cung pod, khac edge -> 4 hops
-     * Khac pod -> 6 hops
-     */
-    private double estimateHopCount(SDNHost h1, SDNHost h2) {
-        try {
-            String[] n1 = h1.getName().split("-");
-            String[] n2 = h2.getName().split("-");
-            if (!n1[1].equals(n2[1])) return 6.0;
-            if (!n1[2].equals(n2[2])) return 4.0;
-            return 2.0;
-        } catch (Exception e) {
-            return 4.0;
-        }
-    }
-
-
-    // =========================================================
     // UTILIZATION HELPERS
     // =========================================================
 
@@ -399,32 +328,6 @@ public class MshOrScalingPolicy {
     public double getVmUtilization(SDNVm vm) {
         return vm.getMonitoredUtilizationCPU(
                 CloudSim.clock() - 15.0, CloudSim.clock());
-    }
-
-    /**
-     * Tinh CPU utilization cua host co tinh den Sharing Factor.
-     * VNF phuc vu nhieu SFC -> tai thuc te cao hon.
-     * Factor = 1 + (sfcCount - 1) * 0.5
-     */
-    public double getCpuUtilization(
-            SDNHost host,
-            Collection<ServiceFunctionChainPolicy> sfcPolicies) {
-
-        if (host.getVmList().isEmpty()) return 0;
-        double totalUsed = 0, totalAllocated = 0;
-
-        for (Object vmObj : host.getVmList()) {
-            SDNVm  vm        = (SDNVm) vmObj;
-            double allocated = vm.getMips() * vm.getNumberOfPes();
-            double baseUtil  = getVmUtilization(vm);
-            int    sfcCount  = countSFCsUsingVm(vm.getId(), sfcPolicies);
-            double factor    = sfcCount <= 1 ? 1.0 : 1.0 + (sfcCount - 1) * 0.5;
-
-            totalUsed      += baseUtil * factor * allocated;
-            totalAllocated += allocated;
-        }
-
-        return totalAllocated > 0 ? totalUsed / totalAllocated : 0;
     }
 
     /**

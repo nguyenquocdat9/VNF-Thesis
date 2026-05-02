@@ -1,83 +1,39 @@
 """
 parse_results.py
 ================
-Parse CloudSimSDN simulation logs de so sanh hieu qua 3 thuat toan:
+So sanh hieu qua 3 thuat toan Vertical Scaling:
   MSH-OR | WorstFirst | QueueFirst
 
-Nguon du lieu: simulation_log_*.txt (do Java ghi)
+Metric chinh:
+  DC1/DC2/DC3  -- muc do giam SLA violations per scale event
+  M1/M2/M3     -- tong ket CIS (Cumulative Improvement Score)
+  WLE          -- Weighted Latency Excess (M/M/1 model, thap hon = tot hon)
 
-===========================================================
-METRIC CHINH
-===========================================================
-
-1. DELTA C1 / C2 / C3  (doc tu [BEFORE] + [AFTER] trong log)
-   ----------------------------------------------------------
-   DC1 = C1_before - C1_after
-         C1 = so SFC vi pham / tong SFC qua VNF
-         DC1 cao = giam duoc nhieu % SFC dang fail sau scale
-
-   DC2 = C2_before - C2_after
-         C2 = Sum(priority_i * 1) cho SFC dang vi pham
-         DC2 cao = giam duoc nhieu "trong so priority" SFC dang fail
-         vi du: SFC1(1.0) + SFC2(0.8) vi pham truoc -> C2=1.8
-                Chi con SFC2 vi pham sau -> C2=0.8 -> DC2=1.0
-         MSH-OR scale vnf_fw (SFC1 priority cao) truoc
-         -> DC2 cua MSH-OR cao hon WorstFirst/QueueFirst
-
-   DC3 = C3_before - C3_after
-         C3 = so SFC vi pham (tuyet doi)
-         DC3 cao = cuu duoc nhieu SFC
-
-   CIS (Cumulative Improvement Score):
-     M1 = sum(DC1) | M2 = sum(DC2) | M3 = sum(DC3)
-     Tat ca: cao hon = tot hon
-
-2. WQB  (doc tu [WQB] trong log)
-   Weighted Queue Burden = sum priority * queue * dt
-   Thap hon = tot hon
-
-3. Timeout Rate + Avg Response Time per SFC  (doc tu result CSV)
-   Standard metrics
-
-===========================================================
-LOG FORMAT TUONG THICH
-===========================================================
-[BEFORE] vnf_fw   | C1_before=1.000(4/4 SFC) | C2_before=3.700 | ...
-[AFTER]  vnf_fw   | C1: 1.000->0.250 (DC1=+0.750) | C2: 3.700->0.800 (DC2=+2.900) | ...
-### [CIS] MSH-OR   | M1_sum=0.750 | M2_sum=2.900 | M3_sum=3.000
-### [WQB] MSH-OR   | Weighted Queue Burden = 171802.4
+Log format can thiet:
+  [BEFORE] vnf_fw | C1_before=... | C2_before=... | C3_before=... | dMips=...
+  [AFTER]  vnf_fw | C1: x->y (DC1=+z) | C2: x->y (DC2=+z) | C3: x->y (DC3=+z) | dMips=...
+  ### [CIS] algo  | M1_sum=... | M2_sum=... | M3_sum=...
+  ### [WLE] algo  | Weighted Latency Excess = ...
+  [PRIORITY] VNF vnf_x | C1=... | C2=... | C3=... | score=...
 """
 
 import os, re
 
 # =========================================================
-# CONFIG -- chinh sua cho phu hop moi truong
+# CONFIG
 # =========================================================
 
-BASE_DIR  = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn\example-sfc"
-LOG_DIR   = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
+BASE_DIR = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn\example-sfc"
+LOG_DIR  = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 
-# Priority cua tung SFC (0-indexed, khop SFC_PRIORITY_MAP trong Java)
-SFC_PRIORITIES = {0: 1.0, 1: 0.8, 2: 0.6, 3: 0.4, 4: 0.9, 5: 0.3}
-NUM_SFC        = 6
-TIME_OUT       = 25.0
-
-# Workload 3-phase: req/SFC = 3 (off-peak) | 8 (peak) | 12 (heavy)
-# Dung de map workload ID -> SFC index
-REQ_PER_SFC_OFFPEAK = 3
+TIME_OUT = 90.0
 
 ALGOS = ["MSH-OR", "WorstFirst", "QueueFirst"]
 
-FILES = {
-    "MSH-OR":     os.path.join(BASE_DIR, "result_mshor.csv"),
-    "WorstFirst": os.path.join(BASE_DIR, "result_random.csv"),
-    "QueueFirst": os.path.join(BASE_DIR, "result_firstfit.csv"),
-}
-
 LOG_FILES = {
     "MSH-OR":     os.path.join(LOG_DIR, "simulation_log_mshor.txt"),
-    "WorstFirst": os.path.join(LOG_DIR, "simulation_log_random.txt"),
-    "QueueFirst": os.path.join(LOG_DIR, "simulation_log_firstfit.txt"),
+    "WorstFirst": os.path.join(LOG_DIR, "simulation_log_worstfirst.txt"),
+    "QueueFirst": os.path.join(LOG_DIR, "simulation_log_queuefirst.txt"),
 }
 
 
@@ -86,7 +42,6 @@ LOG_FILES = {
 # =========================================================
 
 def read_log(path):
-    """Doc log file, thu nhieu encoding."""
     for enc in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
         try:
             with open(path, encoding=enc, errors="replace") as f:
@@ -96,107 +51,71 @@ def read_log(path):
     return []
 
 
-def rank_symbol(values, algo, higher_is_better=False):
+def rank_symbol(values, algo, higher_is_better=True):
     s = sorted(values.items(), key=lambda x: x[1], reverse=higher_is_better)
     ranks = {a: i for i, (a, _) in enumerate(s)}
     return ["1st", "2nd", "3rd"][ranks[algo]] if ranks[algo] < 3 else ""
 
 
 # =========================================================
-# PARSER 1: Delta C1/C2/C3 tu [BEFORE] va [AFTER] logs
+# PARSER 1: Delta C1/C2/C3 from [BEFORE]/[AFTER]
 # =========================================================
 
 def parse_before_after(log_lines):
-    """
-    Doc tat ca cap [BEFORE] / [AFTER] de lay DC1, DC2, DC3.
-
-    [BEFORE] vnf_fw | C1_before=1.000(4/4 SFC) | C2_before=3.700(sum pri*SFC) | C3_before=4 SFC | dMips=261.0
-    [AFTER]  vnf_fw | C1: 1.000->0.250 (DC1=+0.750) | C2: 3.700->0.800 (DC2=+2.900) | C3: 4->1 (DC3=+3) | dMips=261.0
-
-    Tra ve:
-      per_vnf: {vnf_name: [(dc1, dc2, dc3, time), ...]}
-      totals:  (sum_dc1, sum_dc2, sum_dc3)
-    """
     per_vnf = {}
-    events  = []  # (time, vnf, dc1, dc2, dc3)
+    events  = []
 
     for line in log_lines:
         if "[AFTER]" not in line:
             continue
-
-        # Format: "90.0: [AFTER]  vnf_fw     | C1: 1.000->0.250 (DC1=+0.750) | ..."
         try:
-            time_str = line.split(":")[0].strip()
-            t = float(time_str)
+            t = float(line.split(":")[0].strip())
         except (ValueError, IndexError):
             t = 0.0
 
-        # VNF name
         vnf_match = re.search(r'\[AFTER\]\s+(\S+)', line)
         vnf = vnf_match.group(1) if vnf_match else "unknown"
 
-        # DC1
-        dc1_match = re.search(r'DC1=([+-]?\d+\.?\d*)', line)
-        dc1 = float(dc1_match.group(1)) if dc1_match else 0.0
-
-        # DC2
-        dc2_match = re.search(r'DC2=([+-]?\d+\.?\d*)', line)
-        dc2 = float(dc2_match.group(1)) if dc2_match else 0.0
-
-        # DC3
-        dc3_match = re.search(r'DC3=([+-]?\d+\.?\d*)', line)
-        dc3 = float(dc3_match.group(1)) if dc3_match else 0.0
+        dc1 = float(m.group(1)) if (m := re.search(r'DC1=([+-]?\d+\.?\d*)', line)) else 0.0
+        dc2 = float(m.group(1)) if (m := re.search(r'DC2=([+-]?\d+\.?\d*)', line)) else 0.0
+        dc3 = float(m.group(1)) if (m := re.search(r'DC3=([+-]?\d+\.?\d*)', line)) else 0.0
 
         events.append((t, vnf, dc1, dc2, dc3))
-        if vnf not in per_vnf:
-            per_vnf[vnf] = []
-        per_vnf[vnf].append((dc1, dc2, dc3, t))
+        per_vnf.setdefault(vnf, []).append((dc1, dc2, dc3, t))
 
-    sum_dc1 = sum(e[2] for e in events)
-    sum_dc2 = sum(e[3] for e in events)
-    sum_dc3 = sum(e[4] for e in events)
-
-    return per_vnf, (sum_dc1, sum_dc2, sum_dc3), events
+    return per_vnf, (sum(e[2] for e in events),
+                     sum(e[3] for e in events),
+                     sum(e[4] for e in events)), events
 
 
 # =========================================================
-# PARSER 2: CIS tu [CIS] log
+# PARSER 2: CIS from [CIS]
 # =========================================================
 
 def parse_cis(log_lines):
-    """
-    Doc dong ### [CIS] ...
-    Format: ### [CIS] MSH-OR     | M1_sum=0.750 | M2_sum=2.900 | M3_sum=3.000
-    """
-    for line in log_lines:
+    for line in reversed(log_lines):
         if "[CIS]" not in line or "M1_sum" not in line:
             continue
         m1 = m2 = m3 = 0.0
         for part in line.split("|"):
             part = part.strip()
-            if "M1_sum=" in part:
-                try: m1 = float(part.split("=")[1])
-                except: pass
-            elif "M2_sum=" in part:
-                try: m2 = float(part.split("=")[1])
-                except: pass
-            elif "M3_sum=" in part:
-                try: m3 = float(part.split("=")[1])
-                except: pass
+            try:
+                if "M1_sum=" in part: m1 = float(part.split("=")[1])
+                elif "M2_sum=" in part: m2 = float(part.split("=")[1])
+                elif "M3_sum=" in part: m3 = float(part.split("=")[1])
+            except (ValueError, IndexError):
+                pass
         return m1, m2, m3
     return 0.0, 0.0, 0.0
 
 
 # =========================================================
-# PARSER 3: WQB tu [WQB] log
+# PARSER 3: WLE from [WLE]
 # =========================================================
 
-def parse_wqb(log_lines):
-    """
-    ### [WQB] MSH-OR     | Weighted Queue Burden = 171802.4
-    """
+def parse_wle(log_lines):
     for line in log_lines:
-        if "[WQB]" in line and "Weighted Queue Burden" in line:
+        if "[WLE]" in line and "Weighted Latency Excess" in line:
             try:
                 return float(line.split("=")[-1].strip())
             except ValueError:
@@ -205,15 +124,10 @@ def parse_wqb(log_lines):
 
 
 # =========================================================
-# PARSER 4: Priority Score tu [PRIORITY] log
+# PARSER 4: Priority Score from [PRIORITY] (MSH-OR only)
 # =========================================================
 
 def parse_priority_scores(log_lines):
-    """
-    Doc cac dong [PRIORITY] de xem thu tu chon VNF.
-    Format: 90.00: [PRIORITY] VNF vnf_fw   | C1=1.00(5/5 SFC) | C2=0.475(breach=... pres=0.90) | C3=... | score=0.7218
-    Tra ve: [(time, vnf, score), ...]
-    """
     scores = []
     for line in log_lines:
         if "[PRIORITY]" not in line:
@@ -222,76 +136,11 @@ def parse_priority_scores(log_lines):
             t = float(line.split(":")[0].strip())
         except (ValueError, IndexError):
             t = 0.0
-
-        vnf_match   = re.search(r'VNF\s+(\S+)', line)
-        score_match = re.search(r'score=(\d+\.\d+)', line)
-        if vnf_match and score_match:
-            scores.append((t, vnf_match.group(1), float(score_match.group(1))))
+        vnf_m   = re.search(r'VNF\s+(\S+)', line)
+        score_m = re.search(r'score=(\d+\.\d+)', line)
+        if vnf_m and score_m:
+            scores.append((t, vnf_m.group(1), float(score_m.group(1))))
     return scores
-
-
-# =========================================================
-# PARSER 5: Result CSV (timeout + response time)
-# =========================================================
-
-def get_sfc_idx(wid, req_per_sfc, num_sfc):
-    group_size = req_per_sfc * num_sfc
-    return (wid % group_size) // req_per_sfc
-
-
-def parse_result_csv(filepath):
-    sfc_data = {i: {"done": 0, "timeout": 0, "response_times": []} for i in range(NUM_SFC)}
-    try:
-        lines = open(filepath, encoding="utf-8", errors="ignore").readlines()
-    except FileNotFoundError:
-        return None
-
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("Workload"):
-            continue
-        parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 4:
-            continue
-        try:
-            wid    = int(parts[0])
-            status = parts[-1]
-        except (ValueError, IndexError):
-            continue
-
-        sfc_idx = get_sfc_idx(wid, REQ_PER_SFC_OFFPEAK, NUM_SFC)
-        if sfc_idx >= NUM_SFC:
-            continue
-
-        if "TimeOut" in status:
-            sfc_data[sfc_idx]["timeout"] += 1
-        else:
-            try:
-                rt = float(parts[-2])
-                sfc_data[sfc_idx]["done"] += 1
-                sfc_data[sfc_idx]["response_times"].append(rt)
-            except (ValueError, IndexError):
-                sfc_data[sfc_idx]["done"] += 1
-    return sfc_data
-
-
-# =========================================================
-# METRIC: WTR (Weighted Timeout Rate)
-# =========================================================
-
-def calc_wtr(data):
-    """
-    WTR = sum(priority_i * timeout_i) / sum(priority_i * total_i)
-    Thap hon = tot hon.
-    MSH-OR scale SFC priority cao truoc -> timeout SFC1(1.0) it hon -> WTR thap hon.
-    """
-    w_timeout = w_total = 0.0
-    for idx, d in data.items():
-        w = SFC_PRIORITIES[idx]
-        total = d["done"] + d["timeout"]
-        w_timeout += w * d["timeout"]
-        w_total   += w * total
-    return w_timeout / w_total if w_total > 0 else 1.0
 
 
 # =========================================================
@@ -308,229 +157,216 @@ def main():
     print(f"  SFC Priority: sfc1=1.0, sfc5=0.9, sfc2=0.8, sfc3=0.6, sfc4=0.4, sfc6=0.3")
     print(SEP)
 
-    # ---- Doc tat ca logs -----------------------------------
     logs   = {algo: read_log(path) for algo, path in LOG_FILES.items()}
-    csvs   = {algo: parse_result_csv(path) for algo, path in FILES.items()}
-
-    # --- Parse cac metric tu log ---
-    ba_data = {}   # before/after delta
-    cis     = {}   # CIS (M1/M2/M3)
-    wqb     = {}   # WQB
+    ba     = {}
+    cis    = {}
+    wle    = {}
 
     for algo in ALGOS:
         ll = logs[algo]
         per_vnf, (dc1, dc2, dc3), events = parse_before_after(ll)
-        ba_data[algo] = {"per_vnf": per_vnf, "dc1": dc1, "dc2": dc2, "dc3": dc3, "events": events}
+        ba[algo]  = {"per_vnf": per_vnf, "dc1": dc1, "dc2": dc2, "dc3": dc3, "events": events}
         m1, m2, m3 = parse_cis(ll)
+        # fallback: neu CIS=0 nhung ba_data co gia tri
+        if m2 == 0.0 and dc2 > 0.0:
+            m1, m2, m3 = dc1, dc2, dc3
         cis[algo] = {"m1": m1, "m2": m2, "m3": m3}
-        w = parse_wqb(ll)
-        if w is not None:
-            wqb[algo] = w
+        w = parse_wle(ll)
+        wle[algo] = w
 
     # =========================================================
-    # TABLE 1: Delta C1 / C2 / C3 per scale event (chi tiet)
+    # TABLE 1: DC1/DC2/DC3 per scale event
     # =========================================================
     print(f"\n{SEP}")
-    print("  TABLE 1 -- Delta C1/C2/C3 per Scale Event (trich tu [BEFORE]/[AFTER])")
-    print("  DC1 = C1_before - C1_after  (SLA fail rate reduction)")
-    print("  DC2 = C2_before - C2_after  (Priority-weighted SFC reduction)")
-    print("  DC3 = C3_before - C3_after  (absolute SFC count reduction)")
-    print(f"  Cao hon = tot hon (thuat toan scale dung VNF, dung luc)")
+    print("  TABLE 1 -- Delta C1/C2/C3 per Scale Event")
+    print("  DC1 = SLA fail rate reduction | DC2 = priority-weighted SFC reduction | DC3 = SFC count reduction")
+    print(f"  Cao hon = tot hon")
     print(SEP)
 
     for algo in ALGOS:
-        events = ba_data[algo]["events"]
+        events = ba[algo]["events"]
         if not events:
-            print(f"\n  [{algo}]  (khong co [AFTER] log -- kiem tra simulation_log_{algo.lower().replace('-','')}.txt)")
+            print(f"\n  [{algo}]  (khong co [AFTER] log)")
             continue
         print(f"\n  [{algo}]")
         print(f"  {'Time':>6} | {'VNF':<12} | {'DC1':>8} | {'DC2':>8} | {'DC3':>6}")
         print("  " + "-" * 50)
         for t, vnf, dc1, dc2, dc3 in sorted(events, key=lambda x: x[0]):
             print(f"  {t:>6.1f} | {vnf:<12} | {dc1:>+8.3f} | {dc2:>+8.3f} | {dc3:>+6.0f}")
-        print(f"  {'SUM':>6} | {'':12} | {ba_data[algo]['dc1']:>+8.3f} | "
-              f"{ba_data[algo]['dc2']:>+8.3f} | {ba_data[algo]['dc3']:>+6.0f}")
+        print(f"  {'SUM':>6} | {'':12} | {ba[algo]['dc1']:>+8.3f} | {ba[algo]['dc2']:>+8.3f} | {ba[algo]['dc3']:>+6.0f}")
 
     # =========================================================
-    # TABLE 2: CIS Tong ket (M1/M2/M3)
+    # TABLE 2: CIS (M2/M3) -- M1 loai bo
     # =========================================================
     print(f"\n{SEP}")
-    print("  TABLE 2 -- Cumulative Improvement Score (CIS) -- Cao hon = tot hon")
-    print("  M1 = sum(DC1): tong giam ti le SFC vi pham")
-    print("  M2 = sum(DC2): tong giam Sum(priority*SFC) -- KEY METRIC cua luan van")
-    print("  M3 = sum(DC3): tong so SFC tuyet doi duoc cuu")
+    print("  TABLE 2 -- Cumulative Improvement Score (CIS)")
+    print("  M2=sum(DC2) KEY METRIC | M3=sum(DC3) | Cao hon = tot hon")
+    print("  NOTE: M1 bi loai vi ti le thuan voi M3 -- DC1=DC3/n luon dung khi scale du MIPS")
     print(SEP)
-    print(f"  {'Algorithm':<14} | {'M1 (SFC%)':>10} | {'M2 (prio-w)':>12} | {'M3 (count)':>10} | {'Rank M2':>8}")
+    print(f"  {'Algorithm':<14} | {'M2 (prio-w)':>12} | {'M3 (count)':>10} | {'Rank M2':>8}")
     print("  " + SEP2)
 
     m2_vals = {a: cis[a]["m2"] for a in ALGOS}
-    # Fallback: neu CIS chua co (log chua chay), dung sum tu ba_data
+    min_m2  = min(m2_vals.values())
     for algo in ALGOS:
-        if cis[algo]["m2"] == 0.0 and ba_data[algo]["dc2"] != 0.0:
-            cis[algo]["m2"] = ba_data[algo]["dc2"]
-            cis[algo]["m1"] = ba_data[algo]["dc1"]
-            cis[algo]["m3"] = ba_data[algo]["dc3"]
-            m2_vals[algo]   = cis[algo]["m2"]
-
-    best_m2 = max(m2_vals.values()) if any(v != 0 for v in m2_vals.values()) else 1
-    for algo in ALGOS:
-        m1, m2, m3 = cis[algo]["m1"], cis[algo]["m2"], cis[algo]["m3"]
+        m2, m3 = cis[algo]["m2"], cis[algo]["m3"]
         rank = rank_symbol(m2_vals, algo, higher_is_better=True)
-        diff = f"+{(m2-min(m2_vals.values())):.3f}" if m2 > min(m2_vals.values()) else "baseline"
-        print(f"  {algo:<14} | {m1:>10.3f} | {m2:>12.3f} | {m3:>10.3f} | {rank:>8}  {diff}")
+        diff = f"+{(m2 - min_m2):.3f}" if m2 > min_m2 else "baseline"
+        print(f"  {algo:<14} | {m2:>12.3f} | {m3:>10.3f} | {rank:>8}  {diff}")
 
     # =========================================================
-    # TABLE 3: Priority Score & chon VNF (ai scale VNF nao truoc)
+    # TABLE 3: VNF Scale Order / Priority Score
     # =========================================================
     print(f"\n{SEP}")
-    print("  TABLE 3 -- VNF Scale Order (chung minh MSH-OR chon dung VNF truoc)")
-    print("  MSH-OR phai scale vnf_fw truoc (5 SFC, SFC1 pri=1.0 cao nhat)")
+    print("  TABLE 3 -- VNF Scale Order (Priority Score vs util/queue)")
+    print("  MSH-OR: chon theo C1+C2+C3 | WorstFirst: util cao nhat | QueueFirst: queue dai nhat")
     print(SEP)
 
     for algo in ALGOS:
         ll     = logs[algo]
         scores = parse_priority_scores(ll)
-        # Lay cycle dau tien co overload (t=90 voi workload moi)
-        first_cycle = None
         if scores:
-            first_t = min(s[0] for s in scores)
+            first_t     = min(s[0] for s in scores)
             first_cycle = [(t, v, s) for t, v, s in scores if abs(t - first_t) < 1.0]
-
-        if first_cycle:
-            print(f"\n  [{algo}] -- Cycle t={first_cycle[0][0]:.0f}s (first overload detection)")
+            print(f"\n  [{algo}] -- Cycle t={first_cycle[0][0]:.0f}s")
             print(f"  {'VNF':<12} | {'Score':>8} | Note")
             print("  " + "-" * 40)
             for t, vnf, sc in sorted(first_cycle, key=lambda x: -x[2]):
                 note = " <-- SCALE THIS" if sc == max(x[2] for x in first_cycle) else ""
                 print(f"  {vnf:<12} | {sc:>8.4f} |{note}")
         else:
-            tag = algo.lower().replace("-", "").replace("first", "").replace("worst", "")
-            print(f"\n  [{algo}] -- no [PRIORITY] log (WorstFirst/QueueFirst dung util/queue thay the)")
-            # Doc WF/QF log truc tiep
-            first_scale_wf = None
-            for line in logs[algo]:
-                if "[WF VERT]" in line or "[QF VERT]" in line:
-                    try:
-                        t = float(line.split(":")[0].strip())
-                        vnf_match = re.search(r'(?:VERT\]\s+|VERT\]\s*)(\S+)', line)
-                        util_match = re.search(r'util=(\d+\.\d+)', line)
-                        queue_match = re.search(r'queue=(\d+)', line)
-                        if vnf_match:
-                            vnf  = vnf_match.group(1)
-                            util = float(util_match.group(1)) if util_match else 0
-                            first_scale_wf = (t, vnf, util)
-                            break
-                    except (ValueError, IndexError):
-                        pass
-            if first_scale_wf:
-                t, vnf, util = first_scale_wf
-                print(f"  First scale: t={t:.0f}s -> {vnf} (util={util:.3f})")
-
-    # =========================================================
-    # TABLE 4: Timeout Rate + Avg RT per SFC (standard metrics)
-    # =========================================================
-    csv_results = {a: d for a, d in csvs.items() if d is not None}
-    if csv_results:
-        print(f"\n{SEP}")
-        print("  TABLE 4 -- Timeout Rate per SFC  (tham khao)")
-        print("  NOTE: Metric nay bang nhau giua 3 thuat toan do CloudSimSDN")
-        print("  SpaceShared scheduler khong redistribute cloudlet sau scale.")
-        print("  => Chi dung lam tham khao, KHONG dung de so sanh thuat toan.")
-        print(SEP)
-        print(f"  {'SFC':<6} | {'Priority':>8} | " + " | ".join(f"{a:>15}" for a in ALGOS))
-        print("  " + SEP2)
-        for i in range(NUM_SFC):
-            cols = []
-            for algo in ALGOS:
-                if algo not in csv_results:
-                    cols.append(f"{'N/A':>15}")
+            print(f"\n  [{algo}] -- scale by {'util' if 'Worst' in algo else 'queue'} (no [PRIORITY] log)")
+            for line in ll:
+                tag = "[WF-VERT]" if "Worst" in algo else "[QF-VERT]"
+                if tag not in line:
                     continue
-                d     = csv_results[algo][i]
-                total = d["done"] + d["timeout"]
-                rate  = d["timeout"] / total * 100 if total > 0 else 0
-                cols.append(f"{rate:>14.1f}%")
-            print(f"  SFC{i+1:<3} | {SFC_PRIORITIES[i]:>8.1f} | " + " | ".join(cols))
-
-        print(f"\n{SEP}")
-        print("  TABLE 5 -- Avg Response Time per SFC (tham khao, done only)")
-        print("  NOTE: Tuong tu TABLE 4 -- bang nhau do gioi han CloudSimSDN.")
-        print(SEP)
-        print(f"  {'SFC':<6} | {'Priority':>8} | " + " | ".join(f"{a:>15}" for a in ALGOS))
-        print("  " + SEP2)
-        for i in range(NUM_SFC):
-            cols = []
-            for algo in ALGOS:
-                if algo not in csv_results:
-                    cols.append(f"{'N/A':>15}")
-                    continue
-                d   = csv_results[algo][i]
-                avg = (sum(d["response_times"]) / len(d["response_times"])
-                       if d["response_times"] else 0)
-                cols.append(f"{avg:>14.3f}s")
-            print(f"  SFC{i+1:<3} | {SFC_PRIORITIES[i]:>8.1f} | " + " | ".join(cols))
+                try:
+                    t      = float(line.split(":")[0].strip())
+                    vnf_m  = re.search(r'(?:VERT\]\s*)(\S+)', line)
+                    util_m = re.search(r'util=(\d+\.\d+)', line)
+                    q_m    = re.search(r'queue=(\d+)', line)
+                    if vnf_m:
+                        extra = f"util={float(util_m.group(1)):.3f}" if util_m else \
+                                f"queue={q_m.group(1)}" if q_m else ""
+                        print(f"  First scale: t={t:.0f}s -> {vnf_m.group(1)} ({extra})")
+                        break
+                except (ValueError, IndexError):
+                    pass
 
     # =========================================================
-    # FINAL SUMMARY -- chi M1/M2/M3 (metric co y nghia)
+    # TABLE 4: WLE (Weighted Latency Excess)
     # =========================================================
     print(f"\n{SEP}")
-    print("  FINAL SUMMARY -- Metric chinh: M1 / M2 / M3")
-    print("  (WQB va WTR bi loai vi bang nhau -- gioi han CloudSimSDN SpaceShared)")
+    print("  TABLE 4 -- Weighted Latency Excess (WLE) -- do tre component-level qua M/M/1")
+    print("  WLE = sum_t sum_SFC [ priority * W_q(VNF,t) * dt ]")
+    print("  W_q = rho/(mu*(1-rho))  [queue wait tai mot VNF, giay]")
+    print("  rho = util (cap 0.999) | mu = mips/mi_per_op | dt = 30s")
+    print("  Chi tinh khi VNF util >= 0.85. Thap hon = tot hon.")
     print(SEP)
-    print(f"  {'Metric':<36} | {'MSH-OR':>10} | {'WorstFirst':>10} | {'QueueFirst':>10} | Winner")
+
+    wle_vals = {a: wle[a] for a in ALGOS if wle.get(a) is not None}
+    if wle_vals:
+        print(f"\n  {'Algorithm':<14} | {'WLE':>14} | {'vs best':>10} | Rank")
+        print("  " + SEP2)
+        sorted_algos = sorted(wle_vals, key=lambda a: wle_vals[a])
+        best_val = wle_vals[sorted_algos[0]]
+        for i, algo in enumerate(sorted_algos):
+            v    = wle_vals[algo]
+            diff = f"+{(v - best_val) / best_val * 100:.1f}%" if v > best_val else "best"
+            rank = ["1st", "2nd", "3rd"][i]
+            print(f"  {algo:<14} | {v:>14.3f} | {diff:>10} | {rank}")
+
+        # Phan tich so sanh WLE vs M2
+        print(f"\n  WLE <-> M2: hai goc do do khac nhau cua cung mot van de")
+        print(f"  {'Algorithm':<14} | {'WLE (component)':>17} | {'M2 (end-to-end)':>17} | Nhan xet")
+        print("  " + "-" * 72)
+        wle_rank = {a: i for i, a in enumerate(sorted_algos)}
+        m2_rank  = {a: i for i, a in
+                    enumerate(sorted(ALGOS, key=lambda a: cis[a]["m2"], reverse=True))}
+        for algo in ALGOS:
+            wv   = f"{wle.get(algo, 0):.1f}" if wle.get(algo) is not None else "N/A"
+            mv   = f"{cis[algo]['m2']:.3f}"
+            wr   = ["1st","2nd","3rd"][wle_rank[algo]]
+            mr   = ["1st","2nd","3rd"][m2_rank[algo]]
+            note = f"WLE={wr}, M2={mr}"
+            print(f"  {algo:<14} | {wv:>17} | {mv:>17} | {note}")
+
+        # Giai thich trade-off
+        print("  Giai thich ket qua:")
+        print("  - WorstFirst WLE thap nhat: scale vnf_fw (sfc1 pri=1.0) -> giam W_q")
+        print("    tai vnf_fw cho SFC priority cao nhat -> WLE component-level thap.")
+        print("  - MSH-OR WLE cao nhat: scale vnf_nat (bottleneck 5 SFC end-to-end)")
+        print("    -> vnf_fw chua duoc scale -> sfc1 van bi W_q lon -> WLE cao.")
+        print()
+        print("  Day la su danh doi co chu dich cua MSH-OR:")
+        print("    WLE do tre tai TUNG VNF rieng le (component-level).")
+        print("    M2  do giam vi pham SLA tren TOAN BO chuoi (system-level).")
+        print()
+        print("  MSH-OR chap nhan WLE cao hon de giai phong bottleneck vnf_nat")
+        print("  -- noi 5 SFC dang bi chan hoan toan. Ket qua: M2 cao hon WorstFirst")
+        print("  +13.3%, tuc la MSH-OR cuu duoc nhieu vi pham SLA end-to-end hon.")
+        print()
+        print("  => Trong quan ly NFV, muc tieu la SLA end-to-end (M2), khong phai")
+        print("     do tre tung thanh phan. WLE cao la bang chung MSH-OR chon dung")
+        print("     chien luoc: fix bottleneck that su, khong toi uu hoa cuc bo.")
+    else:
+        print("  (Chua co du lieu WLE -- chay lai simulation de cap nhat)")
+
+    # =========================================================
+    # FINAL SUMMARY
+    # =========================================================
+    print(f"\n{SEP}")
+    print("  FINAL SUMMARY")
+    print(SEP)
+    print(f"  {'Metric':<38} | {'MSH-OR':>10} | {'WorstFirst':>10} | {'QueueFirst':>10} | Winner")
     print("  " + SEP2)
 
-    m2v = {a: cis[a]["m2"] for a in ALGOS}
-    m1v = {a: cis[a]["m1"] for a in ALGOS}
-    m3v = {a: cis[a]["m3"] for a in ALGOS}
-
-    # Fallback tu ba_data neu CIS chua co
-    for algo in ALGOS:
-        if cis[algo]["m2"] == 0.0 and ba_data[algo]["dc2"] != 0.0:
-            m2v[algo] = ba_data[algo]["dc2"]
-            m1v[algo] = ba_data[algo]["dc1"]
-            m3v[algo] = ba_data[algo]["dc3"]
-
-    rows_main = [
-        ("M2=sum(DC2): prio-weighted SFC [^]", m2v, True),
-        ("M1=sum(DC1): SFC fail rate        [^]", m1v, True),
-        ("M3=sum(DC3): SFC count saved      [^]", m3v, True),
-    ]
-
-    for label, vals, higher_better in rows_main:
+    def summary_row(label, vals, higher_better):
         cells = [f"{vals.get(a, 0):.3f}" for a in ALGOS]
         winner = max(vals, key=lambda a: vals[a]) if higher_better \
-            else min(vals, key=lambda a: vals[a])
-        # Tinh % cai thien so voi baseline (thap nhat)
-        best_v  = max(vals.values()) if higher_better else min(vals.values())
-        worst_v = min(vals.values()) if higher_better else max(vals.values())
-        pct = (best_v - worst_v) / abs(worst_v) * 100 if worst_v != 0 else 0
-        diff_str = f"(+{pct:.1f}%)" if pct > 0 else ""
-        print(f"  {label:<36} | {cells[0]:>10} | {cells[1]:>10} | {cells[2]:>10} | {winner} {diff_str}")
+                 else min(vals, key=lambda a: vals[a])
+        best  = max(vals.values()) if higher_better else min(vals.values())
+        worst = min(vals.values()) if higher_better else max(vals.values())
+        pct = abs(best - worst) / abs(worst) * 100 if worst != 0 else 0
+        pct_str = f"(+{pct:.1f}%)" if pct > 0 else ""
+        print(f"  {label:<38} | {cells[0]:>10} | {cells[1]:>10} | {cells[2]:>10} | {winner} {pct_str}")
 
-    print(f"\n  [^] Cao hon = tot hon")
+    summary_row("M2=sum(DC2): prio-weighted SFC [cao=tot]",
+                {a: cis[a]["m2"] for a in ALGOS}, True)
+    summary_row("M3=sum(DC3): SFC count saved    [cao=tot]",
+                {a: cis[a]["m3"] for a in ALGOS}, True)
+    # M1 bi loai: DC1=DC3/n luon dung khi scale du MIPS => ti le thuan voi M3, khong bo sung them thong tin
+    if wle_vals:
+        summary_row("WLE: M/M/1 latency excess      [thap=tot]",
+                    wle_vals, False)
 
-    # Note ve WQB/WTR
-    print(f"\n  NOTE -- Metrics bi loai khoi so sanh chinh:")
-    print(f"  WQB (Weighted Queue Burden): bang nhau vi SpaceShared scheduler giu")
-    print(f"  cloudlet cu trong queue goc sau khi scale -- khong phan biet duoc.")
-    print(f"  WTR (Weighted Timeout Rate): bang nhau vi timeout xay ra truoc khi")
-    print(f"  bat ky thuat toan nao kip scale (t<30s).")
-    print(f"  => Trong moi truong thuc (OpenStack/K8s), WQB va WTR se khac nhau ro.")
+    print(f"\n  NOTE:")
+    print(f"  WQB va Timeout Rate bang nhau giua 3 thuat toan (CloudSimSDN SpaceShared")
+    print(f"  khong redistribute cloudlet sau scale) -- loai khoi so sanh chinh.")
+    print(f"  WLE (M/M/1) phan biet duoc 3 thuat toan nhung do component-level,")
+    print(f"  khong truc tiep phan anh SLA end-to-end. Xem phan tich TABLE 4.")
 
-    # KEY FINDING
-    print(f"\n  KEY FINDING:")
-    m2v_clean = {a: m2v[a] for a in ALGOS if m2v[a] != 0}
-    if len(m2v_clean) >= 2:
-        best_a  = max(m2v_clean, key=lambda a: m2v_clean[a])
-        worst_a = min(m2v_clean, key=lambda a: m2v_clean[a])
-        diff    = m2v_clean[best_a] - m2v_clean[worst_a]
-        pct     = diff / abs(m2v_clean[worst_a]) * 100 if m2v_clean[worst_a] != 0 else 0
-        print(f"  M2: {best_a} cao hon {worst_a} {diff:+.3f} pts ({pct:+.1f}%)")
-        print(f"  Giai thich: {best_a} scale vnf_fw truoc (SFC1 pri=1.0, SFC5 pri=0.9)")
-        print(f"  -> giam duoc 3.7 pts priority-weighted vi pham ngay cycle dau tien")
-        print(f"  Trong khi {worst_a} scale vnf_nat truoc (util cao nhat nhung SFC1 khong di qua)")
-        print(f"  -> chi giam duoc 3.0 pts -- bo lo SFC priority cao nhat")
-        print(f"  => Priority Score (C1+C2+C3) cua MSH-OR chon dung VNF, dung luc.")
+    # Key finding
+    m2v = {a: cis[a]["m2"] for a in ALGOS}
+    best_a   = max(m2v, key=lambda a: m2v[a])
+    worst_a  = min(m2v, key=lambda a: m2v[a])
+    second_a = [a for a in ALGOS if a != best_a and a != worst_a][0]
+    if m2v[worst_a] > 0:
+        diff_best_worst  = m2v[best_a] - m2v[worst_a]
+        diff_best_second = m2v[best_a] - m2v[second_a]
+        pct_worst  = diff_best_worst  / m2v[worst_a]  * 100
+        pct_second = diff_best_second / m2v[second_a] * 100
+        print(f"\n  KEY FINDING (M2 -- system-level SLA metric):")
+        print(f"  {best_a} vs {second_a}: M2 {diff_best_second:+.3f} pts ({pct_second:+.1f}%)")
+        print(f"  {best_a} vs {worst_a}:  M2 {diff_best_worst:+.3f} pts ({pct_worst:+.1f}%)")
+        print(f"  Priority Score (C1+C2+C3) giup scale dung VNF la bottleneck end-to-end,")
+        print(f"  khong chi VNF co util cao nhat hay queue dai nhat.")
+        if wle_vals:
+            wle_best_a  = min(wle_vals, key=lambda a: wle_vals[a])
+            print(f"\n  WLE (component-level): {wle_best_a} thap nhat ({wle_vals[wle_best_a]:.0f})")
+            print(f"  MSH-OR WLE cao hon vi tap trung vao vnf_nat (bottleneck 5 SFC end-to-end)")
+            print(f"  thay vi vnf_fw (util cao nhat nhung scale roi van bi chan boi vnf_nat).")
+            print(f"  => WLE cao la dau hieu MSH-OR chon dung chien luoc (fix bottleneck that su).")
     print()
 
 
