@@ -26,14 +26,22 @@ import os, re
 BASE_DIR = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn\example-sfc"
 LOG_DIR  = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 
-TIME_OUT = 90.0
+TIME_OUT = 200.0   # khop voi Configuration.java
 
-ALGOS = ["MSH-OR", "WorstFirst", "QueueFirst"]
+ALGOS = ["NoScale", "MSH-OR", "WorstFirst", "QueueFirst"]
 
 LOG_FILES = {
+    "NoScale":    os.path.join(LOG_DIR, "simulation_log_noscale.txt"),
     "MSH-OR":     os.path.join(LOG_DIR, "simulation_log_mshor.txt"),
     "WorstFirst": os.path.join(LOG_DIR, "simulation_log_worstfirst.txt"),
     "QueueFirst": os.path.join(LOG_DIR, "simulation_log_queuefirst.txt"),
+}
+
+FILES = {
+    "NoScale":    os.path.join(BASE_DIR, "result_noscale.csv"),
+    "MSH-OR":     os.path.join(BASE_DIR, "result_mshor.csv"),
+    "WorstFirst": os.path.join(BASE_DIR, "result_worstfirst.csv"),
+    "QueueFirst": os.path.join(BASE_DIR, "result_queuefirst.csv"),
 }
 
 
@@ -144,6 +152,100 @@ def parse_priority_scores(log_lines):
 
 
 # =========================================================
+# PARSER 5: MIPS Efficiency per Scale Event
+# =========================================================
+
+def parse_mips_efficiency(log_lines):
+    """Returns sorted list of (time, vnf, dmips, dc3, efficiency)."""
+    events = []
+    for line in log_lines:
+        if "[AFTER]" not in line:
+            continue
+        try:
+            t = float(line.split(":")[0].strip())
+        except (ValueError, IndexError):
+            t = 0.0
+        vnf_m = re.search(r'\[AFTER\]\s+(\S+)', line)
+        dc3_m = re.search(r'DC3=([+-]?\d+\.?\d*)', line)
+        dm_m  = re.search(r'dMips=(\d+\.?\d*)', line)
+        vnf   = vnf_m.group(1) if vnf_m else "unknown"
+        dc3   = float(dc3_m.group(1)) if dc3_m else 0.0
+        dmips = float(dm_m.group(1)) if dm_m else 0.0
+        eff   = dc3 / dmips if dmips > 0 else 0.0
+        events.append((t, vnf, dmips, dc3, eff))
+    return sorted(events, key=lambda x: x[0])
+
+
+# =========================================================
+# PARSER 6: Result CSV -- timeout rate & response time per SFC
+# =========================================================
+
+def parse_result_csv(filepath):
+    """
+    Doc result CSV va tinh per-SFC stats.
+    CloudSimSDN chi ghi vao CSV khi request hoan thanh toan bo SFC chain.
+    Request timeout hoac con trong queue khi SIM_END deu KHONG co trong CSV.
+    Timeout = total_submitted - done_in_csv
+    """
+    wl_client = {}
+    wl_path   = os.path.join(BASE_DIR, "fat-tree-wiki-workload.csv")
+    try:
+        with open(wl_path, encoding="utf-8", errors="ignore") as f:
+            for i, line in enumerate(f):
+                if i == 0: continue
+                parts = line.strip().split(",")
+                if len(parts) >= 2:
+                    wl_client[i-1] = parts[1].strip()
+    except FileNotFoundError:
+        return None
+
+    total_submitted = len(wl_client)
+    client_sfc = {
+        "client1": ("sfc1", 1.0), "client2": ("sfc2", 0.8),
+        "client3": ("sfc3", 0.6), "client4": ("sfc4", 0.4),
+        "client5": ("sfc5", 0.9), "client6": ("sfc6", 0.3),
+    }
+    sfc_done = {}
+    sfc_rt   = {}
+
+    try:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if "Workload_ID" in line: continue
+                parts = [p.strip().rstrip(",") for p in line.split(",")]
+                if len(parts) < 35: continue
+                try:
+                    wid = int(parts[0])
+                    rt  = float(parts[34])
+                except (ValueError, IndexError):
+                    continue
+                client = wl_client.get(wid, "unknown")
+                sfc, _ = client_sfc.get(client, ("unk", 0))
+                if sfc == "unk": continue
+                sfc_done[sfc] = sfc_done.get(sfc, 0) + 1
+                sfc_rt.setdefault(sfc, []).append(rt)
+    except FileNotFoundError:
+        return None
+
+    sfc_total = {}
+    for wid, client in wl_client.items():
+        sfc, _ = client_sfc.get(client, ("unk", 0))
+        if sfc != "unk":
+            sfc_total[sfc] = sfc_total.get(sfc, 0) + 1
+
+    result = {}
+    for sfc in [s for s, _ in client_sfc.values()]:
+        done    = sfc_done.get(sfc, 0)
+        total   = sfc_total.get(sfc, 0)
+        timeout = total - done
+        result[sfc] = {
+            "done": done, "timeout": timeout, "total": total,
+            "response_times": sfc_rt.get(sfc, []),
+        }
+    return result
+
+
+# =========================================================
 # MAIN
 # =========================================================
 
@@ -215,6 +317,34 @@ def main():
         print(f"  {algo:<14} | {m2:>12.3f} | {m3:>10.3f} | {rank:>8}  {diff}")
 
     # =========================================================
+    # TABLE 2b: MIPS Efficiency (C3 in action)
+    # =========================================================
+    print(f"\n{SEP}")
+    print("  TABLE 2b -- MIPS Efficiency (C3 in action)")
+    print("  Total MIPS: sum(delta) from [VERTICAL SCALE] events (same as [AFTER] dMips=)")
+    print("  Efficiency = M3 / Total_MIPS  (SFC saved per MIPS allocated, cao hon = tot hon)")
+    print(SEP)
+    print(f"  {'Algorithm':<14} | {'Total MIPS':>12} | {'M3 (SFC saved)':>14} | {'Efficiency (SFC/MIPS)':>21} | Rank")
+    print("  " + SEP2)
+
+    _eff2b = {}
+    for algo in ["MSH-OR", "WorstFirst", "QueueFirst"]:
+        ev = parse_mips_efficiency(logs[algo])
+        tm = sum(e[2] for e in ev)
+        m3 = cis[algo]["m3"]
+        oe = m3 / tm if tm > 0 else 0.0
+        _eff2b[algo] = (tm, m3, oe)
+
+    _sorted2b = sorted(_eff2b, key=lambda a: _eff2b[a][2], reverse=True)
+    _rank2b   = {a: ["1st", "2nd", "3rd"][i] for i, a in enumerate(_sorted2b)}
+    for algo in ["MSH-OR", "WorstFirst", "QueueFirst"]:
+        tm, m3, oe = _eff2b[algo]
+        print(f"  {algo:<14} | {tm:>12.1f} | {m3:>14.0f} | {oe:>21.3f} | {_rank2b[algo]}")
+
+    print(f"\n  NOTE: MSH-OR su dung it MIPS nhat nhung cuu duoc nhieu SFC nhat")
+    print(f"        -- C3 (MIPS Efficiency) trong Priority Score hoat dong dung muc tieu")
+
+    # =========================================================
     # TABLE 3: VNF Scale Order / Priority Score
     # =========================================================
     print(f"\n{SEP}")
@@ -264,8 +394,9 @@ def main():
     print("  Chi tinh khi VNF util >= 0.85. Thap hon = tot hon.")
     print(SEP)
 
-    wle_vals = {a: wle[a] for a in ALGOS if wle.get(a) is not None}
+    wle_vals = {a: wle[a] for a in ALGOS if wle.get(a)}
     if wle_vals:
+        rank_labels = ["1st", "2nd", "3rd", "4th"]
         print(f"\n  {'Algorithm':<14} | {'WLE':>14} | {'vs best':>10} | Rank")
         print("  " + SEP2)
         sorted_algos = sorted(wle_vals, key=lambda a: wle_vals[a])
@@ -273,22 +404,23 @@ def main():
         for i, algo in enumerate(sorted_algos):
             v    = wle_vals[algo]
             diff = f"+{(v - best_val) / best_val * 100:.1f}%" if v > best_val else "best"
-            rank = ["1st", "2nd", "3rd"][i]
+            rank = rank_labels[i] if i < len(rank_labels) else "-"
             print(f"  {algo:<14} | {v:>14.3f} | {diff:>10} | {rank}")
 
         # Phan tich so sanh WLE vs M2
         print(f"\n  WLE <-> M2: hai goc do do khac nhau cua cung mot van de")
         print(f"  {'Algorithm':<14} | {'WLE (component)':>17} | {'M2 (end-to-end)':>17} | Nhan xet")
         print("  " + "-" * 72)
+        rank_labels = ["1st", "2nd", "3rd", "4th"]
         wle_rank = {a: i for i, a in enumerate(sorted_algos)}
         m2_rank  = {a: i for i, a in
                     enumerate(sorted(ALGOS, key=lambda a: cis[a]["m2"], reverse=True))}
         for algo in ALGOS:
-            wv   = f"{wle.get(algo, 0):.1f}" if wle.get(algo) is not None else "N/A"
-            mv   = f"{cis[algo]['m2']:.3f}"
-            wr   = ["1st","2nd","3rd"][wle_rank[algo]]
-            mr   = ["1st","2nd","3rd"][m2_rank[algo]]
-            note = f"WLE={wr}, M2={mr}"
+            wv = f"{wle.get(algo, 0):.1f}" if wle.get(algo) else "N/A"
+            mv = f"{cis[algo]['m2']:.3f}"
+            wr = rank_labels[wle_rank[algo]] if algo in wle_rank else "N/A"
+            mr = rank_labels[m2_rank[algo]]  if m2_rank[algo] < len(rank_labels) else "-"
+            note = f"WLE={wr}, M2={mr}" if algo in wle_rank else "no scaling"
             print(f"  {algo:<14} | {wv:>17} | {mv:>17} | {note}")
 
         # Giai thich trade-off
@@ -313,23 +445,147 @@ def main():
         print("  (Chua co du lieu WLE -- chay lai simulation de cap nhat)")
 
     # =========================================================
+    # TABLE 5: Timeout Rate per SFC (NoScale vs scaling algos)
+    # =========================================================
+    csvs = {a: parse_result_csv(FILES[a]) for a in ALGOS}
+    SFC_ORDER = [("sfc1",1.0),("sfc5",0.9),("sfc2",0.8),
+                 ("sfc3",0.6),("sfc4",0.4),("sfc6",0.3)]
+
+    if any(v for v in csvs.values()):
+        print(f"\n{SEP}")
+        print("  TABLE 5 -- Timeout Rate per SFC")
+        print("  NoScale = baseline (khong scale) | Scaling algos = improvement")
+        print("  Thap hon = tot hon | pp = percentage points improvement vs NoScale")
+        print(SEP)
+        col = 9
+        header5 = f"  {'SFC':<6} {'Pri':>5} | " + \
+                  " | ".join(f"{a:>{col}}" for a in ALGOS) + \
+                  " | MSH-OR improve"
+        print(header5)
+        print("  " + SEP2)
+        for sfc, pri in SFC_ORDER:
+            cells = []
+            for a in ALGOS:
+                d = csvs.get(a)
+                if not d or sfc not in d:
+                    cells.append(f"{'N/A':>{col}}")
+                    continue
+                total = d[sfc]["total"]
+                rate  = d[sfc]["timeout"]/total*100 if total > 0 else 0
+                cells.append(f"{rate:>{col-1}.1f}%")
+            # Improvement MSH-OR vs NoScale
+            ns = csvs.get("NoScale"); ms = csvs.get("MSH-OR")
+            if ns and ms and sfc in ns and sfc in ms:
+                r_ns = ns[sfc]["timeout"]/ns[sfc]["total"]*100 if ns[sfc]["total"] > 0 else 0
+                r_ms = ms[sfc]["timeout"]/ms[sfc]["total"]*100 if ms[sfc]["total"] > 0 else 0
+                imp  = f"{r_ns - r_ms:>+.1f}pp"
+            else:
+                imp = "N/A"
+            print(f"  {sfc:<6} {pri:>5.1f} | " + " | ".join(cells) + f" | {imp}")
+
+        print(f"\n{SEP}")
+        print("  TABLE 6 -- Avg Response Time per SFC (done requests only, seconds)")
+        print("  Thap hon = tot hon | Cot NoScale = khong co scale, tat ca timeout")
+        print(SEP)
+        print(header5.replace("MSH-OR improve", "MSH-OR improve (s)"))
+        print("  " + SEP2)
+        for sfc, pri in SFC_ORDER:
+            cells = []
+            for a in ALGOS:
+                d = csvs.get(a)
+                if not d or sfc not in d or not d[sfc]["response_times"]:
+                    cells.append(f"{'timeout':>{col}}")
+                    continue
+                avg = sum(d[sfc]["response_times"])/len(d[sfc]["response_times"])
+                cells.append(f"{avg:>{col-1}.3f}s")
+            # Improvement
+            ns = csvs.get("NoScale"); ms = csvs.get("MSH-OR")
+            if ms and sfc in ms and ms[sfc]["response_times"]:
+                avg_ms = sum(ms[sfc]["response_times"])/len(ms[sfc]["response_times"])
+                if ns and sfc in ns and ns[sfc]["response_times"]:
+                    avg_ns = sum(ns[sfc]["response_times"])/len(ns[sfc]["response_times"])
+                    imp = f"{avg_ns - avg_ms:>+.3f}s"
+                else:
+                    imp = "all-timeout→done"
+            else:
+                imp = "N/A"
+            print(f"  {sfc:<6} {pri:>5.1f} | " + " | ".join(cells) + f" | {imp}")
+
+    # =========================================================
+    # TABLE 7: MIPS Efficiency per Scale Event
+    # =========================================================
+    print(f"\n{SEP}")
+    print("  TABLE 7 -- MIPS Efficiency per Scale Event")
+    print("  delta_MIPS: MIPS thuc su cap them (tu [AFTER] dMips=)")
+    print("  DC3: so SFC duoc cuu (tu [AFTER] DC3=)")
+    print("  efficiency = DC3 / delta_MIPS  (SFC/MIPS, cao hon = tot hon)")
+    print("  Chung minh C3 hoat dong dung muc tieu: uu tien VNF cuu nhieu SFC / MIPS nhat")
+    print(SEP)
+
+    mips_eff_data = {}
+    for algo in ALGOS:
+        if algo == "NoScale":
+            continue
+        ev = parse_mips_efficiency(logs[algo])
+        mips_eff_data[algo] = ev
+        if not ev:
+            print(f"\n  [{algo}]  (khong co [AFTER] log)")
+            continue
+        print(f"\n  [{algo}]")
+        print(f"  {'Time':>6} | {'VNF':<12} | {'delta_MIPS':>10} | {'DC3':>6} | {'Efficiency (SFC/MIPS)':>21}")
+        print("  " + "-" * 65)
+        for t, vnf, dmips, dc3, eff in ev:
+            print(f"  {t:>6.1f} | {vnf:<12} | {dmips:>10.1f} | {dc3:>+6.0f} | {eff:>21.4f}")
+        total_mips = sum(e[2] for e in ev)
+        total_dc3  = sum(e[3] for e in ev)
+        overall    = total_dc3 / total_mips if total_mips > 0 else 0.0
+        print(f"  {'TOTAL':>6} | {'':12} | {total_mips:>10.1f} | {total_dc3:>+6.0f} | {overall:>21.4f}")
+
+    print(f"\n  COMPARISON -- Tong ket hieu qua su dung MIPS (3 thuat toan):")
+    print(f"  {'Algorithm':<14} | {'total_MIPS':>12} | {'total_DC3':>10} | {'overall_eff (SFC/MIPS)':>22} | Rank")
+    print("  " + "-" * 72)
+    eff_summary = {}
+    for algo in ["MSH-OR", "WorstFirst", "QueueFirst"]:
+        ev = mips_eff_data.get(algo, [])
+        tm = sum(e[2] for e in ev)
+        td = sum(e[3] for e in ev)
+        oe = td / tm if tm > 0 else 0.0
+        eff_summary[algo] = (tm, td, oe)
+    sorted_eff = sorted(eff_summary, key=lambda a: eff_summary[a][2], reverse=True)
+    rank_lbl7  = ["1st", "2nd", "3rd"]
+    for i, algo in enumerate(sorted_eff):
+        tm, td, oe = eff_summary[algo]
+        print(f"  {algo:<14} | {tm:>12.1f} | {td:>10.0f} | {oe:>22.4f} | {rank_lbl7[i]}")
+    print(f"\n  NOTE: MSH-OR overall_eff cao nhat => C3 chon dung VNF co ratio")
+    print(f"  (SFC cuu duoc) / (MIPS can cap) lon nhat. Total_MIPS nho hon nhung")
+    print(f"  total_DC3 lon hon => uu tien bottleneck thuc su, khong lang phi MIPS.")
+
+    # =========================================================
     # FINAL SUMMARY
     # =========================================================
     print(f"\n{SEP}")
     print("  FINAL SUMMARY")
     print(SEP)
-    print(f"  {'Metric':<38} | {'MSH-OR':>10} | {'WorstFirst':>10} | {'QueueFirst':>10} | Winner")
+
+    # Header dong: bo NoScale khi in summary vi no la baseline (M2=0)
+    scaling_algos = [a for a in ALGOS if a != "NoScale"]
+    col_w = 10
+    header = f"  {'Metric':<38} | " + " | ".join(f"{a:>{col_w}}" for a in scaling_algos) + " | Winner"
+    print(header)
     print("  " + SEP2)
 
     def summary_row(label, vals, higher_better):
-        cells = [f"{vals.get(a, 0):.3f}" for a in ALGOS]
-        winner = max(vals, key=lambda a: vals[a]) if higher_better \
-                 else min(vals, key=lambda a: vals[a])
-        best  = max(vals.values()) if higher_better else min(vals.values())
-        worst = min(vals.values()) if higher_better else max(vals.values())
-        pct = abs(best - worst) / abs(worst) * 100 if worst != 0 else 0
-        pct_str = f"(+{pct:.1f}%)" if pct > 0 else ""
-        print(f"  {label:<38} | {cells[0]:>10} | {cells[1]:>10} | {cells[2]:>10} | {winner} {pct_str}")
+        cells = [f"{vals.get(a, 0):.3f}" for a in scaling_algos]
+        sub   = {a: vals[a] for a in scaling_algos if a in vals}
+        if not sub: return
+        winner = max(sub, key=lambda a: sub[a]) if higher_better \
+                 else min(sub, key=lambda a: sub[a])
+        best  = max(sub.values()) if higher_better else min(sub.values())
+        worst = min(sub.values()) if higher_better else max(sub.values())
+        pct   = abs(best - worst) / abs(worst) * 100 if worst != 0 else 0
+        pct_s = f"(+{pct:.1f}%)" if pct > 0 else ""
+        row   = f"  {label:<38} | " + " | ".join(f"{c:>{col_w}}" for c in cells)
+        print(f"{row} | {winner} {pct_s}")
 
     summary_row("M2=sum(DC2): prio-weighted SFC [cao=tot]",
                 {a: cis[a]["m2"] for a in ALGOS}, True)
@@ -346,11 +602,12 @@ def main():
     print(f"  WLE (M/M/1) phan biet duoc 3 thuat toan nhung do component-level,")
     print(f"  khong truc tiep phan anh SLA end-to-end. Xem phan tich TABLE 4.")
 
-    # Key finding
-    m2v = {a: cis[a]["m2"] for a in ALGOS}
-    best_a   = max(m2v, key=lambda a: m2v[a])
-    worst_a  = min(m2v, key=lambda a: m2v[a])
-    second_a = [a for a in ALGOS if a != best_a and a != worst_a][0]
+    # Key finding -- chi xet cac thuat toan co scaling
+    m2v = {a: cis[a]["m2"] for a in scaling_algos}
+    best_a  = max(m2v, key=lambda a: m2v[a])
+    worst_a = min(m2v, key=lambda a: m2v[a])
+    others  = [a for a in scaling_algos if a != best_a and a != worst_a]
+    second_a = others[0] if others else worst_a
     if m2v[worst_a] > 0:
         diff_best_worst  = m2v[best_a] - m2v[worst_a]
         diff_best_second = m2v[best_a] - m2v[second_a]

@@ -1,5 +1,6 @@
-# run_all.ps1 -- Chay lan luot 3 thuat toan va so sanh ket qua
-# MSH-OR | WorstFirst | QueueFirst  (tat ca chi dung Vertical Scale)
+# run_all.ps1 -- Chay lan luot 4 thuat toan va so sanh ket qua
+# NoScale | MSH-OR | WorstFirst | QueueFirst
+# TIME_OUT = 200s de cloudlet khong timeout truoc khi scale co tac dung
 
 $ErrorActionPreference = "Continue"
 
@@ -10,6 +11,7 @@ $CP_FILE        = "$WORKSPACE\cp.txt"
 $SIMPLE_EXAMPLE = "$WORKSPACE\src\main\java\org\cloudbus\cloudsim\sdn\example\SimpleExample.java"
 
 $NOS = [ordered]@{
+    "noscale"    = "NoScaleNOS"
     "mshor"      = "MshOrNOS"
     "worstfirst" = "WorstFirstNOS"
     "queuefirst" = "QueueFirstNOS"
@@ -17,7 +19,7 @@ $NOS = [ordered]@{
 
 function Switch-NOS($nosClass) {
     $content = [System.IO.File]::ReadAllText($SIMPLE_EXAMPLE)
-    $updated = $content -replace 'new (MshOrNOS|WorstFirstNOS|QueueFirstNOS)\(\)', "new $nosClass()"
+    $updated = $content -replace 'new (NoScaleNOS|MshOrNOS|WorstFirstNOS|QueueFirstNOS)\(\)', "new $nosClass()"
     [System.IO.File]::WriteAllText($SIMPLE_EXAMPLE, $updated)
     $ok = Select-String -Path $SIMPLE_EXAMPLE -Pattern "new $nosClass\(\)" -Quiet
     if ($ok) {
@@ -88,8 +90,8 @@ function Show-QuickComparison() {
     Write-Host " Quick comparison (tu log)" -ForegroundColor White
     Write-Host "======================================" -ForegroundColor White
 
-    $labels = @("mshor", "worstfirst", "queuefirst")
-    $names  = @("MSH-OR    ", "WorstFirst", "QueueFirst")
+    $labels = @("noscale", "mshor", "worstfirst", "queuefirst")
+    $names  = @("NoScale   ", "MSH-OR    ", "WorstFirst", "QueueFirst")
 
     $results = @{}
     for ($i = 0; $i -lt $labels.Count; $i++) {

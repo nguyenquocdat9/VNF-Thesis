@@ -112,7 +112,7 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
     @Override
     public void startEntity() {
         super.startEntity();
-        Configuration.SFC_AUTOSCALE_ENABLE              = false;
+        Configuration.SFC_AUTOSCALE_ENABLE               = false;
         Configuration.SFC_AUTOSCALE_ENABLE_VM            = false;
         Configuration.SFC_AUTOSCALE_ENABLE_SCALE_DOWN_VM = false;
         Configuration.SFC_AUTOSCALE_ENABLE_VM_VERTICAL   = false;
@@ -179,17 +179,6 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
             scaledThisCycle++;
         }
     }
-
-    static double calculateDeltaMipsStatic(SDNVm vnf) {
-        if (!(vnf instanceof ServiceFunction)) return 0;
-        ServiceFunction sf = (ServiceFunction) vnf;
-        double util     = sf.getMonitoredUtilizationCPU(CloudSim.clock() - 15.0, CloudSim.clock());
-        double demand   = util * sf.getInitialMips();
-        double required = demand / 0.8;
-        double delta    = required - sf.getMips();
-        return Math.max(0, delta);
-    }
-
 
     // =========================================================
     // VERTICAL SCALE
@@ -331,37 +320,6 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
     // =========================================================
     // SNAPSHOT — BEFORE/AFTER scale measurement
     // =========================================================
-
-    static void takeSnapshot(SDNVm vnf, double deltaMips,
-                              Collection<ServiceFunctionChainPolicy> policies) {
-        String vnfName = vnf.getName();
-        int    violated = 0, total = 0;
-        double wDelay = 0;
-        Map<String, double[]> snapshot = new LinkedHashMap<>();
-
-        for (ServiceFunctionChainPolicy p : policies) {
-            if (!p.isSFIncludedInChain(vnf.getId())) continue;
-            total++;
-            double pri       = MshOrScalingPolicy.SFC_PRIORITY_MAP
-                    .getOrDefault(p.getName(), MshOrScalingPolicy.DEFAULT_PRIORITY);
-            double avgDelay  = p.getMonitoredDelayAverage();
-            double threshold = p.getDelayThresholdMax();
-            double accTime   = avgDelay > 0 ? avgDelay * p.getMonitoredNumRequests() : 0;
-            double accCount  = p.getMonitoredNumRequests();
-            snapshot.put(p.getName(), new double[]{accTime, accCount, pri});
-            if (avgDelay > 0 && threshold > 0 && avgDelay > threshold) {
-                violated++;
-                wDelay += pri * avgDelay;
-            }
-        }
-
-        pendingSnapshots.put(vnfName,
-                new ScaleSnapshot(vnfName, CloudSim.clock(),
-                        violated, total, wDelay, snapshot, deltaMips));
-
-        System.out.printf("%.1f: [SNAPSHOT] %-10s | violated=%d/%d | wDelay=%.3f | deltaMips=%.1f%n",
-                CloudSim.clock(), vnfName, violated, total, wDelay, deltaMips);
-    }
 
     static void computeProjectedImprovement(SDNVm vnf, double deltaMips,
                                              Collection<ServiceFunctionChainPolicy> policies) {
