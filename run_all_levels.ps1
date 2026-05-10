@@ -1,6 +1,6 @@
 # run_all_levels.ps1
 # Chay 4 workload levels x 3 thuat toan = 12 simulations
-# MSH-OR | WorstFirst | QueueFirst
+# PAVS | WorstFirst | QueueFirst
 # Build 1 lan moi thuat toan, chay 4 levels khong can rebuild
 
 $ErrorActionPreference = "Continue"
@@ -12,7 +12,7 @@ $CP_FILE        = "$WORKSPACE\cp.txt"
 $SIMPLE_EXAMPLE = "$WORKSPACE\src\main\java\org\cloudbus\cloudsim\sdn\example\SimpleExample.java"
 
 $NOS = [ordered]@{
-    "mshor"      = "MshOrNOS"
+    "pavs"       = "PAVScalingNOS"
     "worstfirst" = "WorstFirstNOS"
     "queuefirst" = "QueueFirstNOS"
 }
@@ -26,7 +26,7 @@ foreach ($lv in $LEVELS) { $M2Table[$lv] = @{} }
 # ------------------------------------------------------------------
 function Switch-NOS($nosClass) {
     $content = [System.IO.File]::ReadAllText($SIMPLE_EXAMPLE)
-    $updated = $content -replace 'new (NoScaleNOS|MshOrNOS|WorstFirstNOS|QueueFirstNOS)\(\)', "new $nosClass()"
+    $updated = $content -replace 'new (NoScaleNOS|PAVScalingNOS|WorstFirstNOS|QueueFirstNOS)\(\)', "new $nosClass()"
     [System.IO.File]::WriteAllText($SIMPLE_EXAMPLE, $updated)
     $ok = Select-String -Path $SIMPLE_EXAMPLE -Pattern "new $nosClass\(\)" -Quiet
     if ($ok) {
@@ -119,11 +119,11 @@ function Show-ComparisonTable() {
     Write-Host "  Quick M2 Comparison  (cao hon = tot hon)" -ForegroundColor White
     Write-Host "==========================================================" -ForegroundColor White
     Write-Host ""
-    Write-Host ("  {0,-10} {1,14} {2,14} {3,14}" -f "Level", "MSH-OR", "WorstFirst", "QueueFirst") -ForegroundColor White
+    Write-Host ("  {0,-10} {1,14} {2,14} {3,14}" -f "Level", "PAVS", "WorstFirst", "QueueFirst") -ForegroundColor White
     Write-Host ("  " + "-" * 56) -ForegroundColor DarkGray
 
     foreach ($lv in $LEVELS) {
-        $m  = if ($M2Table[$lv].ContainsKey("mshor"))      { $M2Table[$lv]["mshor"]      } else { "N/A" }
+        $m  = if ($M2Table[$lv].ContainsKey("pavs"))       { $M2Table[$lv]["pavs"]       } else { "N/A" }
         $w  = if ($M2Table[$lv].ContainsKey("worstfirst")) { $M2Table[$lv]["worstfirst"] } else { "N/A" }
         $q  = if ($M2Table[$lv].ContainsKey("queuefirst")) { $M2Table[$lv]["queuefirst"] } else { "N/A" }
         Write-Host ("  {0,-10} {1,14} {2,14} {3,14}" -f $lv, $m, $w, $q) -ForegroundColor Cyan
@@ -133,7 +133,7 @@ function Show-ComparisonTable() {
     # Find overall winner
     $bestLevel = $null; $bestAlgo = $null; $bestVal = -1.0
     foreach ($lv in $LEVELS) {
-        foreach ($lbl in @("mshor","worstfirst","queuefirst")) {
+        foreach ($lbl in @("pavs","worstfirst","queuefirst")) {
             $raw = if ($M2Table[$lv].ContainsKey($lbl)) { $M2Table[$lv][$lbl] } else { "N/A" }
             try {
                 $v = [double]$raw
@@ -151,7 +151,7 @@ function Show-ComparisonTable() {
 # =========================================================
 
 Write-Host "==========================================================" -ForegroundColor White
-Write-Host "  MSH-OR Multi-Level Experiment Runner" -ForegroundColor White
+Write-Host "  PAVS Multi-Level Experiment Runner" -ForegroundColor White
 Write-Host "  4 levels x 3 algorithms = 12 simulations" -ForegroundColor White
 Write-Host "  TIME_OUT=90s | MONITOR_INTERVAL=30s" -ForegroundColor White
 Write-Host "==========================================================" -ForegroundColor White

@@ -1,5 +1,5 @@
 # run_all.ps1 -- Chay lan luot 4 thuat toan va so sanh ket qua
-# NoScale | MSH-OR | WorstFirst | QueueFirst
+# NoScale | PAVS | WorstFirst | QueueFirst
 # TIME_OUT = 200s de cloudlet khong timeout truoc khi scale co tac dung
 
 $ErrorActionPreference = "Continue"
@@ -12,14 +12,21 @@ $SIMPLE_EXAMPLE = "$WORKSPACE\src\main\java\org\cloudbus\cloudsim\sdn\example\Si
 
 $NOS = [ordered]@{
     "noscale"    = "NoScaleNOS"
-    "mshor"      = "MshOrNOS"
+    "pavs"       = "PAVScalingNOS"
+    "worstfirst" = "WorstFirstNOS"
+    "queuefirst" = "QueueFirstNOS"
+}
+
+$DISPLAY_NAME = [ordered]@{
+    "noscale"    = "NoScaleNOS"
+    "pavs"       = "PAVScalingNOS"
     "worstfirst" = "WorstFirstNOS"
     "queuefirst" = "QueueFirstNOS"
 }
 
 function Switch-NOS($nosClass) {
     $content = [System.IO.File]::ReadAllText($SIMPLE_EXAMPLE)
-    $updated = $content -replace 'new (NoScaleNOS|MshOrNOS|WorstFirstNOS|QueueFirstNOS)\(\)', "new $nosClass()"
+    $updated = $content -replace 'new (NoScaleNOS|PAVScalingNOS|WorstFirstNOS|QueueFirstNOS)\(\)', "new $nosClass()"
     [System.IO.File]::WriteAllText($SIMPLE_EXAMPLE, $updated)
     $ok = Select-String -Path $SIMPLE_EXAMPLE -Pattern "new $nosClass\(\)" -Quiet
     if ($ok) {
@@ -90,8 +97,8 @@ function Show-QuickComparison() {
     Write-Host " Quick comparison (tu log)" -ForegroundColor White
     Write-Host "======================================" -ForegroundColor White
 
-    $labels = @("noscale", "mshor", "worstfirst", "queuefirst")
-    $names  = @("NoScale   ", "MSH-OR    ", "WorstFirst", "QueueFirst")
+    $labels = @("noscale", "pavs", "worstfirst", "queuefirst")
+    $names  = @("NoScale   ", "PAVS      ", "WorstFirst", "QueueFirst")
 
     $results = @{}
     for ($i = 0; $i -lt $labels.Count; $i++) {
@@ -146,8 +153,8 @@ function Show-QuickComparison() {
 # =========================================================
 
 Write-Host "======================================" -ForegroundColor White
-Write-Host " MSH-OR Experiment Runner" -ForegroundColor White
-Write-Host " 3 thuat toan: MSH-OR | WorstFirst | QueueFirst" -ForegroundColor White
+Write-Host " PAVS Experiment Runner" -ForegroundColor White
+Write-Host " 3 thuat toan: PAVS | WorstFirst | QueueFirst" -ForegroundColor White
 Write-Host " Tat ca chi dung Vertical Scale (M/M/1)" -ForegroundColor White
 Write-Host " TIME_OUT = 90s | MONITOR_INTERVAL = 30s" -ForegroundColor White
 Write-Host "======================================" -ForegroundColor White
@@ -163,7 +170,7 @@ foreach ($label in $NOS.Keys) {
     $nosClass = $NOS[$label]
     Write-Host ""
     Write-Host "======================================" -ForegroundColor White
-    Write-Host " $nosClass ($label)" -ForegroundColor White
+    Write-Host " $($DISPLAY_NAME[$label]) ($label)" -ForegroundColor White
     Write-Host "======================================" -ForegroundColor White
 
     Switch-NOS $nosClass

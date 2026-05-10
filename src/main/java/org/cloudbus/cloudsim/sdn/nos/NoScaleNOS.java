@@ -38,11 +38,11 @@ public class NoScaleNOS extends NetworkOperatingSystemSimple {
         }
         if (ev.getTag() == MONITOR_EVENT) {
             // Chi log queue, khong scale gi ca
-            MshOrNOS.logQueueLength("NoScale", getHostList());
+            PAVScalingNOS.logQueueLength("NoScale", getHostList());
             if (CloudSim.clock() < SIM_END_TIME) {
                 schedule(getId(), MONITOR_INTERVAL, MONITOR_EVENT);
             } else {
-                MshOrNOS.printWqb("NoScale");
+                PAVScalingNOS.printWqb("NoScale");
                 System.out.println("### NoScaleNOS finished");
             }
         } else {

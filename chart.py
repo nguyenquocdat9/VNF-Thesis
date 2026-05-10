@@ -1,7 +1,7 @@
 """
 chart.py
 ========
-3 bieu do so sanh MSH-OR vs WorstFirst vs QueueFirst.
+3 bieu do so sanh PAVS vs WorstFirst vs QueueFirst.
 Output: results_chart.png (3 subplots, 1 file)
 """
 
@@ -17,12 +17,12 @@ LOG_DIR  = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 OUT_FILE = os.path.join(LOG_DIR, "results_chart.png")
 
 LOG_FILES = {
-    "MSH-OR":     os.path.join(LOG_DIR, "simulation_log_mshor.txt"),
+    "PAVS":     os.path.join(LOG_DIR, "simulation_log_pavs.txt"),
     "WorstFirst": os.path.join(LOG_DIR, "simulation_log_worstfirst.txt"),
     "QueueFirst": os.path.join(LOG_DIR, "simulation_log_queuefirst.txt"),
 }
 
-ALGOS  = ["MSH-OR", "WorstFirst", "QueueFirst"]
+ALGOS  = ["PAVS", "WorstFirst", "QueueFirst"]
 COLORS = ["#2196F3", "#FF9800", "#4CAF50"]   # blue, orange, green
 
 
@@ -108,7 +108,7 @@ def main():
     # =========================================================
     fig, axes = plt.subplots(1, 3, figsize=(20, 7))
     fig.suptitle(
-        "MSH-OR vs WorstFirst vs QueueFirst — Performance Comparison",
+        "PAVS vs WorstFirst vs QueueFirst — Performance Comparison",
         fontsize=17, fontweight='bold', y=1.02
     )
 
@@ -147,7 +147,7 @@ def main():
                      ha='center', va='center',
                      fontsize=10, color='white', fontweight='bold')
 
-    # Annotate MSH-OR improvement arrows
+    # Annotate PAVS improvement arrows
     ax1.annotate("", xy=(x[0], m2_vals[0]), xytext=(x[1], m2_vals[1]),
                  arrowprops=dict(arrowstyle='<->', color='#555555', lw=1.4))
     ax1.text((x[0]+x[1])/2, (m2_vals[0]+m2_vals[1])/2 + 0.5,

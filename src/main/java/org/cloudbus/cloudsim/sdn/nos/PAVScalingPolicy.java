@@ -42,7 +42,7 @@ import java.util.Map;
  *
  * Trong so: a1=0.35, a2=0.40, a3=0.25
  */
-public class MshOrScalingPolicy {
+public class PAVScalingPolicy {
 
     // =========================================================
     // CAU HINH PRIORITY SFC

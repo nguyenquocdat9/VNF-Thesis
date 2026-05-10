@@ -22,9 +22,9 @@ import java.util.Set;
  *   (Best Fit = bin packing, gom VMs vao cang it host cang tot)
  * - Dung sfcForwarder.addDuplicatedSF() de traffic tu dong chia
  *
- * So sanh voi MSH-OR:
+ * So sanh voi PAVS:
  * - Best Fit toi uu resource packing nhung khong tinh SFC priority
- * - MSH-OR toi uu Priority Score + M/M/1 + Vertical Scale + ham P
+ * - PAVS toi uu Priority Score + M/M/1 + Vertical Scale + ham P
  */
 public class BestFitNOS extends NetworkOperatingSystemSimple {
 
@@ -96,7 +96,7 @@ public class BestFitNOS extends NetworkOperatingSystemSimple {
     /**
      * Best Fit: chon host co utilization cao nhat ma van con du tai nguyen.
      * Muc tieu: gom VMs vao cang it host cang tot (bin packing).
-     * Khac voi FirstFit (chon dau tien) va MSH-OR (chon theo ham P).
+     * Khac voi FirstFit (chon dau tien) va PAVS (chon theo ham P).
      */
     private SDNHost findBestFitHost(SDNHost src, List<SDNHost> allHosts) {
         SDNHost bestHost = null;

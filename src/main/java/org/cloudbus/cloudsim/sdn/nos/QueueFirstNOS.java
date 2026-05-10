@@ -61,9 +61,9 @@ public class QueueFirstNOS extends NetworkOperatingSystemSimple {
             if (CloudSim.clock() < SIM_END_TIME) {
                 schedule(getId(), MONITOR_INTERVAL, MONITOR_EVENT);
             } else {
-                MshOrNOS.printWqb("QueueFirst");
-                MshOrNOS.printWle("QueueFirst");
-                MshOrNOS.printCis("QueueFirst");
+                PAVScalingNOS.printWqb("QueueFirst");
+                PAVScalingNOS.printWle("QueueFirst");
+                PAVScalingNOS.printCis("QueueFirst");
             }
         } else {
             super.processEvent(ev);
@@ -74,9 +74,9 @@ public class QueueFirstNOS extends NetworkOperatingSystemSimple {
         List<SDNHost> hosts = getHostList();
         Collection<ServiceFunctionChainPolicy> policies = sfcForwarder.getAllPolicies();
 
-        MshOrNOS.evaluateSnapshots(policies);
-        MshOrNOS.logQueueLength("QueueFirst", hosts);
-        MshOrNOS.accumulateWle(hosts, policies);
+        PAVScalingNOS.evaluateSnapshots(policies);
+        PAVScalingNOS.logQueueLength("QueueFirst", hosts);
+        PAVScalingNOS.accumulateWle(hosts, policies);
 
         // Thu thap tat ca VNF qua tai vao Candidate list
         List<Candidate> overloaded = new ArrayList<>();
@@ -108,6 +108,7 @@ public class QueueFirstNOS extends NetworkOperatingSystemSimple {
 
         // Scale dung 1 VNF/cycle -- VNF co queue dai nhat
         doVerticalScale(overloaded.get(0), policies);
+        PAVScalingNOS.logLoadVariance("QueueFirst", hosts);
     }
 
     private void doVerticalScale(Candidate c,
@@ -140,7 +141,7 @@ public class QueueFirstNOS extends NetworkOperatingSystemSimple {
         double actual   = newMips - sf.getMips();
 
         // Snapshot TRUOC setMips() -- do C1/C2/C3 chinh xac
-        MshOrNOS.computeProjectedImprovement(c.vnf, actual, policies);
+        PAVScalingNOS.computeProjectedImprovement(c.vnf, actual, policies);
 
         sf.setMips(newMips);
 

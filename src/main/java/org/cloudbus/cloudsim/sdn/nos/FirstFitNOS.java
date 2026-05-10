@@ -23,9 +23,9 @@ import java.util.Set;
  *   - Không có Vertical Scale
  *   - Không dùng Priority Score
  *   - Clone VNF sang HOST ĐẦU TIÊN tìm thấy còn tài nguyên
- *   - CHỈ scale 1 VNF mỗi cycle (nhất quán với MSH-OR và Random)
+ *   - CHỈ scale 1 VNF mỗi cycle (nhất quán với PAVS và Random)
  *
- * Monitoring window: 15s (nhất quán với MSH-OR và Random)
+ * Monitoring window: 15s (nhất quán với PAVS và Random)
  */
 public class FirstFitNOS extends NetworkOperatingSystemSimple {
 
@@ -64,8 +64,8 @@ public class FirstFitNOS extends NetworkOperatingSystemSimple {
             if (CloudSim.clock() < SIM_END_TIME)
                 schedule(getId(), MONITOR_INTERVAL, MONITOR_EVENT);
             else
-                MshOrNOS.printWqb("FirstFit");
-            MshOrNOS.printCis("FirstFit");
+                PAVScalingNOS.printWqb("FirstFit");
+            PAVScalingNOS.printCis("FirstFit");
         } else {
             super.processEvent(ev);
         }
@@ -78,17 +78,17 @@ public class FirstFitNOS extends NetworkOperatingSystemSimple {
         Collection<ServiceFunctionChainPolicy> sfcPolicies = sfcForwarder.getAllPolicies();
 
         // Đánh giá snapshot cycle trước (M1/M2/M3)
-        MshOrNOS.evaluateSnapshots(sfcPolicies);
+        PAVScalingNOS.evaluateSnapshots(sfcPolicies);
 
         // Log SLA violation rate định kỳ
-        MshOrNOS.logQueueLength("FirstFit", getHostList());
+        PAVScalingNOS.logQueueLength("FirstFit", getHostList());
 
-        // Shuffle de FirstFit khong trung thu tu voi MSH-OR
+        // Shuffle de FirstFit khong trung thu tu voi PAVS
         // Van la "first fit" — chon host dau tien du dieu kien
-        // nhung thu tu VNF duoc xet la ngau nhien (khac MSH-OR dung Priority Score)
+        // nhung thu tu VNF duoc xet la ngau nhien (khac PAVS dung Priority Score)
         Collections.shuffle(hosts, RANDOM_FF);
 
-        // CHỈ scale 1 VNF mỗi cycle — nhất quán với MSH-OR và Random
+        // CHỈ scale 1 VNF mỗi cycle — nhất quán với PAVS và Random
         for (Object h : hosts) {
             SDNHost host = (SDNHost) h;
             if (host.getVmList().isEmpty()) continue;
@@ -98,7 +98,7 @@ public class FirstFitNOS extends NetworkOperatingSystemSimple {
                 if (vm.getMiddleboxType() == null) continue;
                 if (scaledVnfs.contains(vm.getId())) continue;
 
-                // Window 15s — nhất quán với MSH-OR và Random
+                // Window 15s — nhất quán với PAVS và Random
                 double util = vm.getMonitoredUtilizationCPU(
                         CloudSim.clock() - 15.0, CloudSim.clock());
                 if (util < THRESHOLD) continue;
@@ -171,6 +171,6 @@ public class FirstFitNOS extends NetworkOperatingSystemSimple {
         sfcForwarder.redistributeDuplicatedPathBandwidthAllChain(sf);
 
         // Log SLA violation rate sau scale
-        MshOrNOS.logQueueLength("FirstFit", getHostList());
+        PAVScalingNOS.logQueueLength("FirstFit", getHostList());
     }
 }

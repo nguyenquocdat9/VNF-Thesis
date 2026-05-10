@@ -44,7 +44,7 @@ Bước 3: Mỗi SFC nhận cùng số request (round-robin load balancing)
 KẾT QUẢ KỲ VỌNG
 -----------------
   t=1-20s:  3-4 req/SFC → VNF bình thường → không scale
-  t=21-40s: 9 req/SFC   → VNF_FW overload → MSH-OR scale
+  t=21-40s: 9 req/SFC   → VNF_FW overload → PAVS scale
   → Trigger scale khoảng t=25-30s (sau monitoring window 5s)
 """
 

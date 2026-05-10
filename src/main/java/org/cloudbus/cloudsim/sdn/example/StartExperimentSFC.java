@@ -298,7 +298,7 @@ public class StartExperimentSFC {
 						return new VmAllocationPolicyCombinedMostFullFirst(list);
 					}
 				};
-				nos = new MshOrNOS();
+				nos = new PAVScalingNOS();
 				hsFac = new HostFactorySimple();
 				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
 				break;
@@ -355,7 +355,7 @@ public class StartExperimentSFC {
 						return new VmAllocationPolicyCombinedMostFullFirst(list);
 					}
 				};
-				nos = new MshOrNOS();
+				nos = new PAVScalingNOS();
 				hsFac = new HostFactorySimple();
 				PhysicalTopologyParser.loadPhysicalTopologySingleDC(physicalTopologyFile, nos, hsFac);
 				break;

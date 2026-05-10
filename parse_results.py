@@ -2,7 +2,7 @@
 parse_results.py
 ================
 So sanh hieu qua 3 thuat toan Vertical Scaling:
-  MSH-OR | WorstFirst | QueueFirst
+  PAVS | WorstFirst | QueueFirst
 
 Metric chinh:
   DC1/DC2/DC3  -- muc do giam SLA violations per scale event
@@ -28,18 +28,18 @@ LOG_DIR  = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 
 TIME_OUT = 200.0   # khop voi Configuration.java
 
-ALGOS = ["NoScale", "MSH-OR", "WorstFirst", "QueueFirst"]
+ALGOS = ["NoScale", "PAVS", "WorstFirst", "QueueFirst"]
 
 LOG_FILES = {
     "NoScale":    os.path.join(LOG_DIR, "simulation_log_noscale.txt"),
-    "MSH-OR":     os.path.join(LOG_DIR, "simulation_log_mshor.txt"),
+    "PAVS":     os.path.join(LOG_DIR, "simulation_log_pavs.txt"),
     "WorstFirst": os.path.join(LOG_DIR, "simulation_log_worstfirst.txt"),
     "QueueFirst": os.path.join(LOG_DIR, "simulation_log_queuefirst.txt"),
 }
 
 FILES = {
     "NoScale":    os.path.join(BASE_DIR, "result_noscale.csv"),
-    "MSH-OR":     os.path.join(BASE_DIR, "result_mshor.csv"),
+    "PAVS":     os.path.join(BASE_DIR, "result_pavs.csv"),
     "WorstFirst": os.path.join(BASE_DIR, "result_worstfirst.csv"),
     "QueueFirst": os.path.join(BASE_DIR, "result_queuefirst.csv"),
 }
@@ -132,7 +132,7 @@ def parse_wle(log_lines):
 
 
 # =========================================================
-# PARSER 4: Priority Score from [PRIORITY] (MSH-OR only)
+# PARSER 4: Priority Score from [PRIORITY] (PAVS only)
 # =========================================================
 
 def parse_priority_scores(log_lines):
@@ -177,7 +177,27 @@ def parse_mips_efficiency(log_lines):
 
 
 # =========================================================
-# PARSER 6: Result CSV -- timeout rate & response time per SFC
+# PARSER 6: Load Variance from [LOAD_VAR]
+# =========================================================
+
+def parse_load_variance(log_lines):
+    """Returns sorted list of (time, variance) from [LOAD_VAR] lines."""
+    events = []
+    for line in log_lines:
+        if "[LOAD_VAR]" not in line:
+            continue
+        try:
+            t = float(line.split(":")[0].strip())
+        except (ValueError, IndexError):
+            t = 0.0
+        m = re.search(r'variance=([0-9]+\.?[0-9]*)', line)
+        if m:
+            events.append((t, float(m.group(1))))
+    return sorted(events, key=lambda x: x[0])
+
+
+# =========================================================
+# PARSER 7: Result CSV -- timeout rate & response time per SFC
 # =========================================================
 
 def parse_result_csv(filepath):
@@ -254,7 +274,7 @@ def main():
     SEP2 = "-" * 72
 
     print(SEP)
-    print("  MSH-OR vs WorstFirst vs QueueFirst -- Comparison Report")
+    print("  PAVS vs WorstFirst vs QueueFirst -- Comparison Report")
     print(f"  Workload: 3-phase (3/8/12 req/SFC) | TIME_OUT={TIME_OUT}s")
     print(f"  SFC Priority: sfc1=1.0, sfc5=0.9, sfc2=0.8, sfc3=0.6, sfc4=0.4, sfc6=0.3")
     print(SEP)
@@ -328,7 +348,7 @@ def main():
     print("  " + SEP2)
 
     _eff2b = {}
-    for algo in ["MSH-OR", "WorstFirst", "QueueFirst"]:
+    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
         ev = parse_mips_efficiency(logs[algo])
         tm = sum(e[2] for e in ev)
         m3 = cis[algo]["m3"]
@@ -337,11 +357,11 @@ def main():
 
     _sorted2b = sorted(_eff2b, key=lambda a: _eff2b[a][2], reverse=True)
     _rank2b   = {a: ["1st", "2nd", "3rd"][i] for i, a in enumerate(_sorted2b)}
-    for algo in ["MSH-OR", "WorstFirst", "QueueFirst"]:
+    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
         tm, m3, oe = _eff2b[algo]
         print(f"  {algo:<14} | {tm:>12.1f} | {m3:>14.0f} | {oe:>21.3f} | {_rank2b[algo]}")
 
-    print(f"\n  NOTE: MSH-OR su dung it MIPS nhat nhung cuu duoc nhieu SFC nhat")
+    print(f"\n  NOTE: PAVS su dung it MIPS nhat nhung cuu duoc nhieu SFC nhat")
     print(f"        -- C3 (MIPS Efficiency) trong Priority Score hoat dong dung muc tieu")
 
     # =========================================================
@@ -349,7 +369,7 @@ def main():
     # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 3 -- VNF Scale Order (Priority Score vs util/queue)")
-    print("  MSH-OR: chon theo C1+C2+C3 | WorstFirst: util cao nhat | QueueFirst: queue dai nhat")
+    print("  PAVS: chon theo C1+C2+C3 | WorstFirst: util cao nhat | QueueFirst: queue dai nhat")
     print(SEP)
 
     for algo in ALGOS:
@@ -427,25 +447,62 @@ def main():
         print("  Giai thich ket qua:")
         print("  - WorstFirst WLE thap nhat: scale vnf_fw (sfc1 pri=1.0) -> giam W_q")
         print("    tai vnf_fw cho SFC priority cao nhat -> WLE component-level thap.")
-        print("  - MSH-OR WLE cao nhat: scale vnf_nat (bottleneck 5 SFC end-to-end)")
+        print("  - PAVS WLE cao nhat: scale vnf_nat (bottleneck 5 SFC end-to-end)")
         print("    -> vnf_fw chua duoc scale -> sfc1 van bi W_q lon -> WLE cao.")
         print()
-        print("  Day la su danh doi co chu dich cua MSH-OR:")
+        print("  Day la su danh doi co chu dich cua PAVS:")
         print("    WLE do tre tai TUNG VNF rieng le (component-level).")
         print("    M2  do giam vi pham SLA tren TOAN BO chuoi (system-level).")
         print()
-        print("  MSH-OR chap nhan WLE cao hon de giai phong bottleneck vnf_nat")
+        print("  PAVS chap nhan WLE cao hon de giai phong bottleneck vnf_nat")
         print("  -- noi 5 SFC dang bi chan hoan toan. Ket qua: M2 cao hon WorstFirst")
-        print("  +13.3%, tuc la MSH-OR cuu duoc nhieu vi pham SLA end-to-end hon.")
+        print("  +13.3%, tuc la PAVS cuu duoc nhieu vi pham SLA end-to-end hon.")
         print()
         print("  => Trong quan ly NFV, muc tieu la SLA end-to-end (M2), khong phai")
-        print("     do tre tung thanh phan. WLE cao la bang chung MSH-OR chon dung")
+        print("     do tre tung thanh phan. WLE cao la bang chung PAVS chon dung")
         print("     chien luoc: fix bottleneck that su, khong toi uu hoa cuc bo.")
     else:
         print("  (Chua co du lieu WLE -- chay lai simulation de cap nhat)")
 
     # =========================================================
-    # TABLE 5: Timeout Rate per SFC (NoScale vs scaling algos)
+    # TABLE 5: Host Load Variance after Scale Events
+    # =========================================================
+    print(f"\n{SEP}")
+    print("  TABLE 5 -- Host Load Variance after Scale Events")
+    print("  variance = sum((util_i - mean)^2) / n  |  thap hon = load deu hon sau scale")
+    print("  util_host = (totalMips - availMips) / totalMips")
+    print(SEP)
+
+    lv_data = {}
+    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+        lv_data[algo] = parse_load_variance(logs[algo])
+
+    all_times = sorted(set(t for ev in lv_data.values() for t, _ in ev))
+    if all_times:
+        print(f"\n  {'Time':>6} | {'PAVS var':>12} | {'WorstFirst var':>14} | {'QueueFirst var':>14}")
+        print("  " + "-" * 55)
+        for t in all_times:
+            row = f"  {t:>6.1f} |"
+            for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+                match = next((v for ts, v in lv_data[algo] if abs(ts - t) < 1.0), None)
+                row += f" {match:>11.4f} |" if match is not None else f" {'N/A':>11} |"
+            print(row)
+        print("  " + "-" * 55)
+        avgs = {}
+        for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+            vals = [v for _, v in lv_data[algo]]
+            avgs[algo] = sum(vals) / len(vals) if vals else 0.0
+        row = f"  {'AVG':>6} |"
+        for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+            row += f" {avgs[algo]:>11.4f} |"
+        print(row)
+        best_lv = min(avgs, key=lambda a: avgs[a])
+        print(f"\n  Winner (lowest avg variance): {best_lv} => load distribution most even after scaling")
+    else:
+        print("  (Chua co [LOAD_VAR] log -- rebuild va chay lai simulation)")
+
+    # =========================================================
+    # TABLE 6: Timeout Rate per SFC (NoScale vs scaling algos)
     # =========================================================
     csvs = {a: parse_result_csv(FILES[a]) for a in ALGOS}
     SFC_ORDER = [("sfc1",1.0),("sfc5",0.9),("sfc2",0.8),
@@ -453,14 +510,14 @@ def main():
 
     if any(v for v in csvs.values()):
         print(f"\n{SEP}")
-        print("  TABLE 5 -- Timeout Rate per SFC")
+        print("  TABLE 6 -- Timeout Rate per SFC")
         print("  NoScale = baseline (khong scale) | Scaling algos = improvement")
         print("  Thap hon = tot hon | pp = percentage points improvement vs NoScale")
         print(SEP)
         col = 9
         header5 = f"  {'SFC':<6} {'Pri':>5} | " + \
                   " | ".join(f"{a:>{col}}" for a in ALGOS) + \
-                  " | MSH-OR improve"
+                  " | PAVS improve"
         print(header5)
         print("  " + SEP2)
         for sfc, pri in SFC_ORDER:
@@ -473,8 +530,8 @@ def main():
                 total = d[sfc]["total"]
                 rate  = d[sfc]["timeout"]/total*100 if total > 0 else 0
                 cells.append(f"{rate:>{col-1}.1f}%")
-            # Improvement MSH-OR vs NoScale
-            ns = csvs.get("NoScale"); ms = csvs.get("MSH-OR")
+            # Improvement PAVS vs NoScale
+            ns = csvs.get("NoScale"); ms = csvs.get("PAVS")
             if ns and ms and sfc in ns and sfc in ms:
                 r_ns = ns[sfc]["timeout"]/ns[sfc]["total"]*100 if ns[sfc]["total"] > 0 else 0
                 r_ms = ms[sfc]["timeout"]/ms[sfc]["total"]*100 if ms[sfc]["total"] > 0 else 0
@@ -484,10 +541,10 @@ def main():
             print(f"  {sfc:<6} {pri:>5.1f} | " + " | ".join(cells) + f" | {imp}")
 
         print(f"\n{SEP}")
-        print("  TABLE 6 -- Avg Response Time per SFC (done requests only, seconds)")
+        print("  TABLE 7 -- Avg Response Time per SFC (done requests only, seconds)")
         print("  Thap hon = tot hon | Cot NoScale = khong co scale, tat ca timeout")
         print(SEP)
-        print(header5.replace("MSH-OR improve", "MSH-OR improve (s)"))
+        print(header5.replace("PAVS improve", "PAVS improve (s)"))
         print("  " + SEP2)
         for sfc, pri in SFC_ORDER:
             cells = []
@@ -499,7 +556,7 @@ def main():
                 avg = sum(d[sfc]["response_times"])/len(d[sfc]["response_times"])
                 cells.append(f"{avg:>{col-1}.3f}s")
             # Improvement
-            ns = csvs.get("NoScale"); ms = csvs.get("MSH-OR")
+            ns = csvs.get("NoScale"); ms = csvs.get("PAVS")
             if ms and sfc in ms and ms[sfc]["response_times"]:
                 avg_ms = sum(ms[sfc]["response_times"])/len(ms[sfc]["response_times"])
                 if ns and sfc in ns and ns[sfc]["response_times"]:
@@ -515,7 +572,7 @@ def main():
     # TABLE 7: MIPS Efficiency per Scale Event
     # =========================================================
     print(f"\n{SEP}")
-    print("  TABLE 7 -- MIPS Efficiency per Scale Event")
+    print("  TABLE 8 -- MIPS Efficiency per Scale Event")
     print("  delta_MIPS: MIPS thuc su cap them (tu [AFTER] dMips=)")
     print("  DC3: so SFC duoc cuu (tu [AFTER] DC3=)")
     print("  efficiency = DC3 / delta_MIPS  (SFC/MIPS, cao hon = tot hon)")
@@ -545,7 +602,7 @@ def main():
     print(f"  {'Algorithm':<14} | {'total_MIPS':>12} | {'total_DC3':>10} | {'overall_eff (SFC/MIPS)':>22} | Rank")
     print("  " + "-" * 72)
     eff_summary = {}
-    for algo in ["MSH-OR", "WorstFirst", "QueueFirst"]:
+    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
         ev = mips_eff_data.get(algo, [])
         tm = sum(e[2] for e in ev)
         td = sum(e[3] for e in ev)
@@ -556,7 +613,7 @@ def main():
     for i, algo in enumerate(sorted_eff):
         tm, td, oe = eff_summary[algo]
         print(f"  {algo:<14} | {tm:>12.1f} | {td:>10.0f} | {oe:>22.4f} | {rank_lbl7[i]}")
-    print(f"\n  NOTE: MSH-OR overall_eff cao nhat => C3 chon dung VNF co ratio")
+    print(f"\n  NOTE: PAVS overall_eff cao nhat => C3 chon dung VNF co ratio")
     print(f"  (SFC cuu duoc) / (MIPS can cap) lon nhat. Total_MIPS nho hon nhung")
     print(f"  total_DC3 lon hon => uu tien bottleneck thuc su, khong lang phi MIPS.")
 
@@ -621,9 +678,9 @@ def main():
         if wle_vals:
             wle_best_a  = min(wle_vals, key=lambda a: wle_vals[a])
             print(f"\n  WLE (component-level): {wle_best_a} thap nhat ({wle_vals[wle_best_a]:.0f})")
-            print(f"  MSH-OR WLE cao hon vi tap trung vao vnf_nat (bottleneck 5 SFC end-to-end)")
+            print(f"  PAVS WLE cao hon vi tap trung vao vnf_nat (bottleneck 5 SFC end-to-end)")
             print(f"  thay vi vnf_fw (util cao nhat nhung scale roi van bi chan boi vnf_nat).")
-            print(f"  => WLE cao la dau hieu MSH-OR chon dung chien luoc (fix bottleneck that su).")
+            print(f"  => WLE cao la dau hieu PAVS chon dung chien luoc (fix bottleneck that su).")
     print()
 
 

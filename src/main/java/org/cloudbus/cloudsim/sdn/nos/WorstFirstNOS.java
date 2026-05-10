@@ -62,9 +62,9 @@ public class WorstFirstNOS extends NetworkOperatingSystemSimple {
             if (CloudSim.clock() < SIM_END_TIME) {
                 schedule(getId(), MONITOR_INTERVAL, MONITOR_EVENT);
             } else {
-                MshOrNOS.printWqb("WorstFirst");
-                MshOrNOS.printWle("WorstFirst");
-                MshOrNOS.printCis("WorstFirst");
+                PAVScalingNOS.printWqb("WorstFirst");
+                PAVScalingNOS.printWle("WorstFirst");
+                PAVScalingNOS.printCis("WorstFirst");
             }
         } else {
             super.processEvent(ev);
@@ -75,9 +75,9 @@ public class WorstFirstNOS extends NetworkOperatingSystemSimple {
         List<SDNHost> hosts = getHostList();
         Collection<ServiceFunctionChainPolicy> policies = sfcForwarder.getAllPolicies();
 
-        MshOrNOS.evaluateSnapshots(policies);
-        MshOrNOS.logQueueLength("WorstFirst", hosts);
-        MshOrNOS.accumulateWle(hosts, policies);
+        PAVScalingNOS.evaluateSnapshots(policies);
+        PAVScalingNOS.logQueueLength("WorstFirst", hosts);
+        PAVScalingNOS.accumulateWle(hosts, policies);
 
         // Thu thap tat ca VNF qua tai vao Candidate list
         List<Candidate> overloaded = new ArrayList<>();
@@ -107,6 +107,7 @@ public class WorstFirstNOS extends NetworkOperatingSystemSimple {
 
         // Scale dung 1 VNF/cycle -- VNF co util cao nhat
         doVerticalScale(overloaded.get(0), policies);
+        PAVScalingNOS.logLoadVariance("WorstFirst", hosts);
     }
 
     private void doVerticalScale(Candidate c,
@@ -139,7 +140,7 @@ public class WorstFirstNOS extends NetworkOperatingSystemSimple {
         double actual   = newMips - sf.getMips();
 
         // Snapshot TRUOC setMips() -- do C1/C2/C3 chinh xac
-        MshOrNOS.computeProjectedImprovement(c.vnf, actual, policies);
+        PAVScalingNOS.computeProjectedImprovement(c.vnf, actual, policies);
 
         sf.setMips(newMips);
 

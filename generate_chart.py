@@ -4,7 +4,7 @@ generate_chart.py
 Reads 12 simulation logs (4 levels x 3 algos) -> writes results_chart.html.
 
 Log file naming: simulation_log_{algo}_{level}.txt
-  e.g. simulation_log_mshor_L3.txt
+  e.g. simulation_log_pavs_L3.txt
 
 Charts:
   1. Grouped bar  -- M2 score per level (X=L1..L4, groups=3 algos)  [MAIN]
@@ -25,7 +25,7 @@ LOG_DIR      = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 WORKLOAD_DIR = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn\example-sfc"
 OUTPUT       = os.path.join(LOG_DIR, "results_chart.html")
 
-ALGOS  = ["MSH-OR", "WorstFirst", "QueueFirst"]
+ALGOS  = ["PAVS", "WorstFirst", "QueueFirst"]
 LEVELS = ["L1", "L2", "L3", "L4"]
 LEVEL_LABELS = {
     "L1": ["L1", "(3/3/3)"],
@@ -41,18 +41,18 @@ LEVEL_DESCS = {
 }
 
 LOG_KEY = {
-    "MSH-OR":     "mshor",
+    "PAVS":     "pavs",
     "WorstFirst": "worstfirst",
     "QueueFirst": "queuefirst",
 }
 
 PALETTE = {
-    "MSH-OR":     {"line": "#27ae60", "fill": "rgba(46,204,113,0.15)",  "bar": "rgba(46,204,113,0.82)"},
+    "PAVS":     {"line": "#27ae60", "fill": "rgba(46,204,113,0.15)",  "bar": "rgba(46,204,113,0.82)"},
     "WorstFirst": {"line": "#2980b9", "fill": "rgba(52,152,219,0.10)",  "bar": "rgba(52,152,219,0.82)"},
     "QueueFirst": {"line": "#c0392b", "fill": "rgba(231,76,60,0.08)",   "bar": "rgba(231,76,60,0.82)"},
 }
 EFF_COLOR = {
-    "MSH-OR": "#27ae60", "WorstFirst": "#e67e22", "QueueFirst": "#c0392b",
+    "PAVS": "#27ae60", "WorstFirst": "#e67e22", "QueueFirst": "#c0392b",
 }
 MIPS_TICKS = [0, 100, 200, 300, 400, 500, 600, 700]
 REF_LEVEL  = "L3"
@@ -241,29 +241,6 @@ def build_payload(data):
         "level_descs":  [LEVEL_DESCS[lv] for lv in LEVELS],
     }
 
-    # ── Chart 2: Line M2 trend per algo across levels ────────────────────────
-    c2_series = []
-    for algo in ALGOS:
-        c2_series.append({
-            "label":      algo,
-            "data":       [safe(data[algo][lv], "m2") for lv in LEVELS],
-            "line_color": PALETTE[algo]["line"],
-            "fill_color": PALETTE[algo]["fill"],
-        })
-
-    # Compute % gain MSH-OR vs QueueFirst at each level
-    gains = []
-    for lv in LEVELS:
-        m_val = safe(data["MSH-OR"][lv], "m2")
-        q_val = safe(data["QueueFirst"][lv], "m2")
-        gains.append(round((m_val - q_val) / q_val * 100, 1) if q_val > 0 else 0.0)
-
-    c2 = {
-        "level_labels": [LEVEL_DESCS[lv] for lv in LEVELS],
-        "series":       c2_series,
-        "mshor_gains":  gains,
-    }
-
     # ── Charts 3/4: Single-level detail for REF_LEVEL ───────────────────────
     ref = REF_LEVEL
     ref_data = {algo: data[algo][ref] for algo in ALGOS}
@@ -314,7 +291,6 @@ def build_payload(data):
         "ref_level":  ref,
         "level_list": LEVELS,
         "c1": c1,
-        "c2": c2,
         "c3": c3,
         "c4": c4,
     }
@@ -326,7 +302,7 @@ HTML_TEMPLATE = """\
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>MSH-OR vs Baselines &#8212; Multi-Level Results</title>
+<title>PAVS vs Baselines &#8212; Multi-Level Results</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <style>
@@ -352,7 +328,7 @@ HTML_TEMPLATE = """\
 </head>
 <body>
 
-<h1>MSH-OR vs Baselines &#8212; NFV Auto-Scaling (Multi-Level)</h1>
+<h1>PAVS vs Baselines &#8212; NFV Auto-Scaling (Multi-Level)</h1>
 <p class="subtitle">
   Fat-Tree k=6 &#124; 54 hosts &#124; 6 SFC &#124; 5 VNF &#124;
   4 workload levels (L1..L4) &#124; 3 algorithms &#215; 4 levels = 12 simulations &#124;
@@ -370,20 +346,22 @@ HTML_TEMPLATE = """\
       sum(DC2): Priority-Weighted SLA Breach Reduction across all 4 workload intensities.
       Higher = better. X groups = workload levels (req/SFC per phase), bars = algorithms.
     </p>
-    <canvas id="c1"></canvas>
+    <div style="position:relative;height:300px"><canvas id="c1"></canvas></div>
     <div class="legend-box" id="legend1"></div>
   </div>
 
+</div>
+
+<!-- ====== CHART 2: DC2 per Scale Event ====== -->
+<p class="section-title">&#9658; Scale Event Efficiency &#8212; DC2 per Cycle</p>
+
+<div class="charts-grid">
   <div class="chart-card wide">
-    <h2>Chart 2 &#8212; M2 Trend Across Workload Levels</h2>
-    <p>
-      How M2 score scales as workload intensity increases (L1 &#8594; L4).
-      Steeper slope = algorithm benefits more from higher load conditions.
-    </p>
-    <canvas id="c2"></canvas>
+    <h2>Chart 2 &#8212; DC2 per Scale Event theo thời gian</h2>
+    <p>M&#7895;i cycle scale, m&#7895;i thu&#7853;t to&#225;n c&#7913;u &#273;&#432;&#7907;c bao nhi&#234;u DC2? Kh&#225;c Chart 1 (t&#7893;ng M2) v&#224; Chart 3/4 (MIPS efficiency).</p>
+    <div style="position:relative;height:280px"><canvas id="c2"></canvas></div>
     <div class="legend-box" id="legend2"></div>
   </div>
-
 </div>
 
 <!-- ====== SECTION 2: Reference Level Detail (L3) ====== -->
@@ -391,7 +369,7 @@ HTML_TEMPLATE = """\
 
 <div class="charts-grid">
 
-  <div class="chart-card wide">
+  <div class="chart-card">
     <h2 id="c3title">Chart 3 &#8212; MIPS Used vs SFC Violations Resolved</h2>
     <p>Resource efficiency: total MIPS allocated vs total SFC violations eliminated (M3).</p>
     <canvas id="c3"></canvas>
@@ -427,14 +405,18 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 // ============================================================
 (function () {
   const d = DATA.c1;
+  const datasets = d.datasets.map(function (ds) {
+    return Object.assign({}, ds, { barPercentage: 0.5, categoryPercentage: 0.65 });
+  });
   new Chart(document.getElementById('c1'), {
     type: 'bar',
     data: {
       labels:   d.level_labels,
-      datasets: d.datasets,
+      datasets: datasets,
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { position: 'top' },
         tooltip: {
@@ -470,60 +452,108 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 }());
 
 // ============================================================
-// Chart 2: Line M2 trend across levels
+// Chart 2: DC2 per Scale Event over time (hardcoded from logs)
 // ============================================================
 (function () {
-  const d = DATA.c2;
-  const datasets = d.series.map(function (s) {
+  const scaleEvents = {
+    labels: ['t=60s', 't=120s', 't=150s', 't=180s', 't=210s'],
+    'PAVS':     [3.0, 3.0, 3.0, 2.5, 3.0],
+    'WorstFirst': [3.0, 3.7, 3.7, 1.2, 1.2],
+    'QueueFirst': [3.0, 3.7, 3.7, 0,   0  ],
+    vnfScaled: {
+      'PAVS':     ['vnf_nat', 'vnf_nat', 'vnf_nat', 'vnf_ids', 'vnf_nat'],
+      'WorstFirst': ['vnf_nat', 'vnf_fw',  'vnf_fw',  'vnf_enc', 'vnf_enc'],
+      'QueueFirst': ['vnf_nat', 'vnf_fw',  'vnf_fw',  '-',       '-'      ],
+    }
+  };
+
+  const algos = ['PAVS', 'WorstFirst', 'QueueFirst'];
+  const colors = {
+    'PAVS':     { bg: 'rgba(46,204,113,0.82)',  border: '#27ae60' },
+    'WorstFirst': { bg: 'rgba(52,152,219,0.82)',  border: '#2980b9' },
+    'QueueFirst': { bg: 'rgba(231,76,60,0.82)',   border: '#c0392b' },
+  };
+
+  const ds2 = algos.map(function (algo) {
     return {
-      label:           s.label,
-      data:            s.data,
-      borderColor:     s.line_color,
-      backgroundColor: s.fill_color,
-      fill:            false,
-      tension:         0.3,
-      pointRadius:     7,
-      pointHoverRadius: 9,
-      borderWidth:     2.5,
+      label: algo,
+      data: scaleEvents[algo],
+      backgroundColor: colors[algo].bg,
+      borderColor: colors[algo].border,
+      borderWidth: 2,
+      borderRadius: 4,
+      barPercentage: 0.5,
+      categoryPercentage: 0.7,
     };
   });
 
   new Chart(document.getElementById('c2'), {
-    type: 'line',
-    data: { labels: d.level_labels, datasets: datasets },
+    type: 'bar',
+    data: { labels: scaleEvents.labels, datasets: ds2 },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { position: 'top' },
+        subtitle: {
+          display: true,
+          text: 'PAVS duy tr\\u00ec DC2\\u22652.5 m\\u1ecdi cycle | WorstFirst gi\\u1ea3m v\\u1ec1 1.2 | QueueFirst d\\u1eebng sau t=150s',
+          color: '#7f8c8d',
+          font: { size: 12 },
+          padding: { bottom: 8 }
+        },
         tooltip: {
           callbacks: {
             label: function (ctx) {
-              return ctx.dataset.label + ': M2=' + ctx.parsed.y.toFixed(2);
+              const algo = ctx.dataset.label;
+              const idx  = ctx.dataIndex;
+              const vnf  = scaleEvents.vnfScaled[algo][idx];
+              const dc2  = ctx.parsed.y;
+              return algo + ': ' + vnf + ' \\u2192 DC2 = ' + dc2.toFixed(1);
             }
           }
         },
+        annotation: {
+          annotations: {
+            maxLine: {
+              type: 'line',
+              yMin: 3.7, yMax: 3.7,
+              borderColor: '#e67e22',
+              borderWidth: 1.5,
+              borderDash: [6, 4],
+              label: {
+                display: true,
+                content: 'Max DC2 = 3.7 (vnf_fw, 5 SFC high-priority)',
+                position: 'end',
+                yAdjust: -14,
+                backgroundColor: 'rgba(255,255,255,0.85)',
+                color: '#e67e22',
+                font: { size: 11, weight: 'bold' },
+                padding: { x: 6, y: 3 },
+              }
+            }
+          }
+        }
       },
       scales: {
         x: {
-          title: { display: true, text: 'Workload Level (req/SFC per phase)' },
+          title: { display: true, text: 'Scale Event Time' },
           grid:  { display: false },
         },
         y: {
           beginAtZero: true,
-          title: { display: true, text: 'M2 Score' },
+          max: 4.5,
+          title: { display: true, text: 'DC2 value (per scale event)' },
         }
       }
     }
   });
 
-  // Legend: MSH-OR gain vs QueueFirst at each level
-  const mshor_s = d.series.find(function (s) { return s.label === 'MSH-OR'; });
-  const gains   = d.mshor_gains;
-  const gainStr = DATA.level_list.map(function (lv, i) {
-    return lv + ': +' + gains[i] + '%';
-  }).join(' | ');
   document.getElementById('legend2').innerHTML =
-    '<b style="color:#27ae60">MSH-OR advantage over QueueFirst: ' + gainStr + '</b>';
+    algos.map(function (algo) {
+      const total = scaleEvents[algo].reduce(function (a, b) { return a + b; }, 0);
+      return '<b style="color:' + colors[algo].border + '">' + algo + '</b>: \\u03A3 DC2 = ' + total.toFixed(1);
+    }).join('   |   ');
 }());
 
 // ============================================================
@@ -558,6 +588,7 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
           backgroundColor: 'rgba(155,89,182,0.75)',
           borderColor: '#8e44ad', borderWidth: 2, borderRadius: 5,
           yAxisID: 'yMips',
+          barPercentage: 0.35, categoryPercentage: 0.6,
         },
         {
           label: 'M3: SFC Violations Resolved',
@@ -565,6 +596,7 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
           backgroundColor: 'rgba(241,196,15,0.82)',
           borderColor: '#f39c12', borderWidth: 2, borderRadius: 5,
           yAxisID: 'yM3',
+          barPercentage: 0.35, categoryPercentage: 0.6,
         }
       ]
     },

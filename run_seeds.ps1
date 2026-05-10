@@ -44,7 +44,7 @@ Set-Location $WORKSPACE
 
 # Switch SimpleExample to RandomScaleNOS
 $content = [System.IO.File]::ReadAllText($SIMPLE_EX)
-$content = $content -replace 'new (MshOrNOS|RandomScaleNOS|FirstFitNOS)\(\)', 'new RandomScaleNOS()'
+$content = $content -replace 'new (PAVScalingNOS|RandomScaleNOS|FirstFitNOS)\(\)', 'new RandomScaleNOS()'
 [System.IO.File]::WriteAllText($SIMPLE_EX, $content)
 
 Write-Host "======================================" -ForegroundColor White
@@ -78,7 +78,7 @@ Write-Host ""
 Write-Host "======================================" -ForegroundColor White
 Write-Host " Results Summary" -ForegroundColor White
 Write-Host "======================================" -ForegroundColor White
-Write-Host "  MSH-OR WQB (reference): 217901.6" -ForegroundColor Green
+Write-Host "  PAVS WQB (reference): 217901.6" -ForegroundColor Green
 Write-Host ""
 foreach ($r in $results) {
     $diff = ""
@@ -86,7 +86,7 @@ foreach ($r in $results) {
         $v = [double]$r.WQB
         $d = $v - 217901.6
         $sign = if ($d -gt 0) { "+" } else { "" }
-        $diff = "  (vs MSH-OR: $sign$([math]::Round($d,1)))"
+        $diff = "  (vs PAVS: $sign$([math]::Round($d,1)))"
     } catch {}
     Write-Host "  Seed=$($r.Seed): WQB=$($r.WQB)$diff"
 }

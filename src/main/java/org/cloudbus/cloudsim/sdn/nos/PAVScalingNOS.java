@@ -18,7 +18,7 @@ import java.util.*;
  *   C3 - MIPS Efficiency:          so SFC cuu duoc / MIPS can cap them
  * Trong so: a1=0.35, a2=0.40, a3=0.25
  */
-public class MshOrNOS extends NetworkOperatingSystemSimple {
+public class PAVScalingNOS extends NetworkOperatingSystemSimple {
 
     private static final int    MAX_SCALE_PER_CYCLE = 1;
     private static final int    MONITOR_EVENT       = 999901;
@@ -30,7 +30,7 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
     // STATE
     // =========================================================
 
-    private final MshOrScalingPolicy policy = new MshOrScalingPolicy();
+    private final PAVScalingPolicy policy = new PAVScalingPolicy();
     private boolean monitoringStarted = false;
 
 
@@ -129,7 +129,7 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
             schedule(getId(), MONITOR_INTERVAL, MONITOR_EVENT);
         }
         if (ev.getTag() == MONITOR_EVENT) {
-            runMshOrLogic();
+            runPavsLogic();
             if (CloudSim.clock() < SIM_END_TIME) {
                 schedule(getId(), MONITOR_INTERVAL, MONITOR_EVENT);
             } else {
@@ -147,7 +147,7 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
     // MAIN LOGIC
     // =========================================================
 
-    private void runMshOrLogic() {
+    private void runPavsLogic() {
         List<SDNHost> hosts = getHostList();
         Collection<ServiceFunctionChainPolicy> sfcPolicies = sfcForwarder.getAllPolicies();
 
@@ -155,25 +155,25 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
         logQueueLength("PAVS", hosts);
         accumulateWle(hosts, sfcPolicies);
 
-        List<MshOrScalingPolicy.VnfScalingCandidate> overloadedVnfs =
+        List<PAVScalingPolicy.VnfScalingCandidate> overloadedVnfs =
                 policy.getOverloadedVnfsSorted(hosts, sfcPolicies);
 
         if (overloadedVnfs.isEmpty()) return;
 
-        for (MshOrScalingPolicy.VnfScalingCandidate c : overloadedVnfs) {
+        for (PAVScalingPolicy.VnfScalingCandidate c : overloadedVnfs) {
             policy.calculatePriorityScore(c.vnf, c.utilization, sfcPolicies, true);
         }
 
         System.out.printf("%.2f: [PAVS] %d VNF(s) can scale:%n",
                 CloudSim.clock(), overloadedVnfs.size());
-        for (MshOrScalingPolicy.VnfScalingCandidate c : overloadedVnfs) {
+        for (PAVScalingPolicy.VnfScalingCandidate c : overloadedVnfs) {
             System.out.printf("       %-15s | %-22s | util=%.1f%% | SFCs=%d | score=%.4f%n",
                     c.vnf.getName(), c.host.getName(),
                     c.utilization * 100, c.sfcCount, c.priorityScore);
         }
 
         int scaledThisCycle = 0;
-        for (MshOrScalingPolicy.VnfScalingCandidate candidate : overloadedVnfs) {
+        for (PAVScalingPolicy.VnfScalingCandidate candidate : overloadedVnfs) {
             if (scaledThisCycle >= MAX_SCALE_PER_CYCLE) break;
             doVerticalScaleVnf(candidate.vnf, candidate.host, sfcPolicies);
             scaledThisCycle++;
@@ -269,7 +269,7 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
                 ServiceFunction sf = (ServiceFunction) vm;
                 double util = sf.getMonitoredUtilizationCPU(
                         CloudSim.clock() - 15.0, CloudSim.clock());
-                if (util < MshOrScalingPolicy.THRESHOLD) continue;
+                if (util < PAVScalingPolicy.THRESHOLD) continue;
 
                 double mips    = sf.getMips();
                 double miPerOp = sf.getMIperOperation() > 0 ? sf.getMIperOperation() : 1.0;
@@ -358,8 +358,8 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
         for (ServiceFunctionChainPolicy p : policies) {
             if (!p.isSFIncludedInChain(vnf.getId())) continue;
             total++;
-            double pri       = MshOrScalingPolicy.SFC_PRIORITY_MAP
-                    .getOrDefault(p.getName(), MshOrScalingPolicy.DEFAULT_PRIORITY);
+            double pri       = PAVScalingPolicy.SFC_PRIORITY_MAP
+                    .getOrDefault(p.getName(), PAVScalingPolicy.DEFAULT_PRIORITY);
             double avgDelay  = p.getMonitoredDelayAverage();
             double threshold = p.getDelayThresholdMax();
             boolean isViolating = (avgDelay < 0) || (threshold > 0 && avgDelay > threshold);
@@ -374,8 +374,8 @@ public class MshOrNOS extends NetworkOperatingSystemSimple {
         Map<String, double[]> sfcSnapshot = new LinkedHashMap<>();
         for (ServiceFunctionChainPolicy p : policies) {
             if (!p.isSFIncludedInChain(vnf.getId())) continue;
-            double pri           = MshOrScalingPolicy.SFC_PRIORITY_MAP
-                    .getOrDefault(p.getName(), MshOrScalingPolicy.DEFAULT_PRIORITY);
+            double pri           = PAVScalingPolicy.SFC_PRIORITY_MAP
+                    .getOrDefault(p.getName(), PAVScalingPolicy.DEFAULT_PRIORITY);
             double avgDelay      = p.getMonitoredDelayAverage();
             double threshold     = p.getDelayThresholdMax();
             double violatedFlag  = (avgDelay < 0 || (threshold > 0 && avgDelay > threshold)) ? 1.0 : 0.0;
