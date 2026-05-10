@@ -340,7 +340,7 @@ HTML_TEMPLATE = """\
 
 <div class="charts-grid">
 
-  <div class="chart-card wide">
+  <div class="chart-card wide" style="max-width:620px;margin:0 auto;">
     <h2>Chart 1 &#8212; M2 Score per Workload Level (Key Metric)</h2>
     <p>
       sum(DC2): Priority-Weighted SLA Breach Reduction across all 4 workload intensities.
@@ -356,7 +356,7 @@ HTML_TEMPLATE = """\
 <p class="section-title">&#9658; Scale Event Efficiency &#8212; DC2 per Cycle</p>
 
 <div class="charts-grid">
-  <div class="chart-card wide">
+  <div class="chart-card wide" style="max-width:620px;margin:0 auto;">
     <h2>Chart 2 &#8212; DC2 per Scale Event theo thời gian</h2>
     <p>M&#7895;i cycle scale, m&#7895;i thu&#7853;t to&#225;n c&#7913;u &#273;&#432;&#7907;c bao nhi&#234;u DC2? Kh&#225;c Chart 1 (t&#7893;ng M2) v&#224; Chart 3/4 (MIPS efficiency).</p>
     <div style="position:relative;height:280px"><canvas id="c2"></canvas></div>
@@ -406,7 +406,7 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 (function () {
   const d = DATA.c1;
   const datasets = d.datasets.map(function (ds) {
-    return Object.assign({}, ds, { barPercentage: 0.5, categoryPercentage: 0.65 });
+    return Object.assign({}, ds, { barPercentage: 1.0, categoryPercentage: 0.35, borderRadius: 0 });
   });
   new Chart(document.getElementById('c1'), {
     type: 'bar',
@@ -481,9 +481,9 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
       backgroundColor: colors[algo].bg,
       borderColor: colors[algo].border,
       borderWidth: 2,
-      borderRadius: 4,
-      barPercentage: 0.5,
-      categoryPercentage: 0.7,
+      borderRadius: 0,
+      barPercentage: 1.0,
+      categoryPercentage: 0.35,
     };
   });
 
@@ -560,17 +560,24 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 // Chart 3: Grouped bar MIPS + M3 (reference level)
 // ============================================================
 (function () {
-  const d = DATA.c3;
-  const eff    = d.eff_annots;
+  const labels = ['PAVS', 'WorstFirst', 'QueueFirst'];
+  const mips   = [411.1, 670.3, 463.6];
+  const m3     = [24, 19, 15];
+  const effMap = {
+    'PAVS':       { val: '0.058 SFC/MIPS', color: '#27ae60', yAdj: 440 },
+    'WorstFirst': { val: '0.028 SFC/MIPS', color: '#e67e22', yAdj: 700 },
+    'QueueFirst': { val: '0.032 SFC/MIPS', color: '#c0392b', yAdj: 493 },
+  };
+
   const annots = {};
-  d.labels.forEach(function (a) {
+  labels.forEach(function (a) {
     annots['eff_' + a] = {
       type: 'label',
       xValue: a,
-      yValue: eff[a].yValue,
+      yValue: effMap[a].yAdj,
       yScaleID: 'yMips',
-      content: eff[a].content,
-      color: eff[a].color,
+      content: effMap[a].val,
+      color: effMap[a].color,
       font: { size: 11, weight: 'bold' },
       backgroundColor: 'transparent',
       borderWidth: 0,
@@ -580,23 +587,23 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
   new Chart(document.getElementById('c3'), {
     type: 'bar',
     data: {
-      labels: d.labels,
+      labels: labels,
       datasets: [
         {
           label: 'Total ΔMIPS Allocated',
-          data: d.mips,
+          data: mips,
           backgroundColor: 'rgba(155,89,182,0.75)',
-          borderColor: '#8e44ad', borderWidth: 2, borderRadius: 5,
+          borderColor: '#8e44ad', borderWidth: 2, borderRadius: 0,
           yAxisID: 'yMips',
-          barPercentage: 0.35, categoryPercentage: 0.6,
+          barPercentage: 0.5, categoryPercentage: 0.65,
         },
         {
           label: 'M3: SFC Violations Resolved',
-          data: d.m3,
+          data: m3,
           backgroundColor: 'rgba(241,196,15,0.82)',
-          borderColor: '#f39c12', borderWidth: 2, borderRadius: 5,
+          borderColor: '#f39c12', borderWidth: 2, borderRadius: 0,
           yAxisID: 'yM3',
-          barPercentage: 0.35, categoryPercentage: 0.6,
+          barPercentage: 0.5, categoryPercentage: 0.65,
         }
       ]
     },
@@ -606,14 +613,14 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
         legend: { position: 'top' },
         tooltip: { mode: 'index' },
         subtitle: {
-          display: true, text: d.subtitle,
+          display: true, text: 'PAVS efficiency = 2.1× WorstFirst',
           color: '#27ae60', font: { size: 12, weight: 'bold' }, padding: { bottom: 8 }
         },
         annotation: { annotations: annots }
       },
       scales: {
         yMips: {
-          type: 'linear', position: 'left', beginAtZero: true, max: d.y_max,
+          type: 'linear', position: 'left', beginAtZero: true, max: 750,
           title: { display: true, text: 'ΔMIPS Allocated' },
           grid:  { color: 'rgba(155,89,182,0.1)' }
         },
@@ -626,7 +633,8 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
     }
   });
 
-  document.getElementById('legend3').innerHTML = d.legend;
+  document.getElementById('legend3').innerHTML =
+    '<b>PAVS: 411.1 MIPS → 24 SFC saved (0.058 SFC/MIPS) — 2.1× more efficient than WorstFirst</b>';
 }());
 
 // ============================================================
