@@ -1,6 +1,4 @@
-# run_all.ps1 -- Chay lan luot 4 thuat toan va so sanh ket qua
-# NoScale | PAVS | WorstFirst | QueueFirst
-# TIME_OUT = 200s de cloudlet khong timeout truoc khi scale co tac dung
+# run_all.ps1 -- 4 thuat toan: NoScale | PAVS | WorstFirst | QueueFirst
 
 $ErrorActionPreference = "Continue"
 
@@ -69,7 +67,6 @@ function Run-Simulation($label) {
 
     Write-Host "  [*] Simulation done" -ForegroundColor Green
 
-    # Luu result CSV
     if (Test-Path $csvDest) { Remove-Item $csvDest }
     if (Test-Path $RESULT_RAW) {
         Move-Item $RESULT_RAW $csvDest
@@ -79,12 +76,11 @@ function Run-Simulation($label) {
         if (Test-Path $simLog) { Get-Content $simLog -Tail 5 | ForEach-Object { Write-Host "    $_" -ForegroundColor Red } }
     }
 
-    # In WQB va CIS
     if (Test-Path $simLog) {
         Select-String -Path $simLog -Pattern "\[WQB\]|\[CIS\]" | ForEach-Object {
             Write-Host "  $($_.Line.Trim())" -ForegroundColor Magenta
         }
-        # XOA file log cu truoc khi copy -- tranh log cu gay parse sai
+        # xoa log cu truoc khi copy -- tranh parse sai
         if (Test-Path $logDest) { Remove-Item $logDest -Force }
         Copy-Item $simLog $logDest -Force
         Write-Host "  [*] Log  -> simulation_log_$label.txt" -ForegroundColor Green
@@ -147,10 +143,6 @@ function Show-QuickComparison() {
         Write-Host "  Winner M2: $best" -ForegroundColor Green
     }
 }
-
-# =========================================================
-# MAIN
-# =========================================================
 
 Write-Host "======================================" -ForegroundColor White
 Write-Host " PAVS Experiment Runner" -ForegroundColor White

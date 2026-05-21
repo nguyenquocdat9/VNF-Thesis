@@ -26,18 +26,11 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
     private static final double SIM_END_TIME        = 200.0;
 
 
-    // =========================================================
-    // STATE
-    // =========================================================
-
     private final PAVScalingPolicy policy = new PAVScalingPolicy();
     private boolean monitoringStarted = false;
 
 
-    // =========================================================
-    // SNAPSHOT TRACKING — M1, M2, M3 evaluation metrics
-    // =========================================================
-
+    // theo doi ket qua scale (M2, M3)
     static class ScaleSnapshot {
         String vnfName;
         double scaleTime;
@@ -66,24 +59,10 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
     static double cisM3 = 0.0;
 
 
-    // =========================================================
-    // SHARED ACCUMULATORS — WQB & WLE
-    // =========================================================
-
-    /**
-     * WQB — Weighted Queue Burden: sum priority * waiting * dt.
-     * Thap hon = tot hon.
-     */
-    static double wqbAccumulator = 0.0;
-
-    /**
-     * WLE — Weighted Latency Excess (M/M/1 based).
-     * WLE = sum_t sum_SFC [ priority * W_q(VNF,t) * dt ]
-     * W_q = rho / (mu*(1-rho)), rho=util, mu=mips/mi_per_op
-     * Chi tich luy khi VNF util >= THRESHOLD (dang qua tai).
-     * Thap hon = tot hon.
-     */
-    static double wleAccumulator = 0.0;
+    // luu tru WQB va WLE tich luy
+    static double wqbAccumulator = 0.0; // sum(pri * waiting * dt), thap hon = tot hon
+    // W_q = rho/(mu*(1-rho))
+    static double wleAccumulator = 0.0; // sum(pri * Wq * dt), thap hon = tot hon
 
     static final Map<String, Double> SFC_PRIORITY_MAP = new LinkedHashMap<>();
     static {
@@ -104,10 +83,6 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
         VNF_MAX_PRIORITY.put("vnf_enc", 0.9);
     }
 
-
-    // =========================================================
-    // LIFECYCLE
-    // =========================================================
 
     @Override
     public void startEntity() {
@@ -143,10 +118,6 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
     }
 
 
-    // =========================================================
-    // MAIN LOGIC
-    // =========================================================
-
     private void runPavsLogic() {
         List<SDNHost> hosts = getHostList();
         Collection<ServiceFunctionChainPolicy> sfcPolicies = sfcForwarder.getAllPolicies();
@@ -180,10 +151,6 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
         }
         if (scaledThisCycle > 0) logLoadVariance("PAVS", hosts);
     }
-
-    // =========================================================
-    // VERTICAL SCALE
-    // =========================================================
 
     private void doVerticalScaleVnf(
             SDNVm vnf, SDNHost host,
@@ -238,23 +205,7 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
     }
 
 
-    // =========================================================
-    // WLE — Weighted Latency Excess (M/M/1)
-    // =========================================================
-
-    /**
-     * Tich luy WLE moi monitoring cycle.
-     *
-     * Voi moi VNF dang qua tai (util >= THRESHOLD):
-     *   mu  = mips / mi_per_op  [service rate, ops/sec]
-     *   rho = min(util, 0.999)  [tranh chia cho 0]
-     *   W_q = rho / (mu*(1-rho)) [expected queue wait, giay]
-     *
-     * WLE += sum_SFC_qua_VNF [ priority * W_q * deltaT ]
-     *
-     * Thuat toan scale VNF co nhieu SFC priority cao truoc (PAVS)
-     * se giam util cua VNF do som hon → W_q giam → WLE thap hon.
-     */
+    // tinh WLE
     static void accumulateWle(List<SDNHost> hosts,
                                Collection<ServiceFunctionChainPolicy> policies) {
         final double deltaT = 30.0;
@@ -287,10 +238,7 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
     }
 
 
-    // =========================================================
-    // QUEUE LENGTH LOGGING — WQB accumulation
-    // =========================================================
-
+    // log do dai hang doi
     static void logQueueLength(String tag, List<SDNHost> hosts) {
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("%.1f: [QUEUE] %-10s |", CloudSim.clock(), tag));
@@ -318,10 +266,6 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
     }
 
 
-    // =========================================================
-    // LOAD VARIANCE LOGGING
-    // =========================================================
-
     static void logLoadVariance(String tag, List<SDNHost> hosts) {
         if (hosts.isEmpty()) return;
         StringBuilder sb = new StringBuilder();
@@ -345,10 +289,6 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
                 CloudSim.clock(), tag, sb.toString(), variance);
     }
 
-
-    // =========================================================
-    // SNAPSHOT — BEFORE/AFTER scale measurement
-    // =========================================================
 
     static void computeProjectedImprovement(SDNVm vnf, double deltaMips,
                                              Collection<ServiceFunctionChainPolicy> policies) {
@@ -449,10 +389,6 @@ public class PAVScalingNOS extends NetworkOperatingSystemSimple {
         return 0.5;
     }
 
-
-    // =========================================================
-    // PRINT — WLE, WQB, CIS
-    // =========================================================
 
     static void printWle(String tag) {
         System.out.printf("%n### [WLE] %-10s | Weighted Latency Excess = %.3f%n", tag, wleAccumulator);

@@ -1,7 +1,5 @@
-# run_all_levels.ps1
-# Chay 4 workload levels x 3 thuat toan = 12 simulations
-# PAVS | WorstFirst | QueueFirst
-# Build 1 lan moi thuat toan, chay 4 levels khong can rebuild
+# run_all_levels.ps1 -- 4 levels x 3 thuat toan = 12 simulations
+# chi build 1 lan moi thuat toan
 
 $ErrorActionPreference = "Continue"
 
@@ -19,7 +17,6 @@ $NOS = [ordered]@{
 
 $LEVELS = @("L1", "L2", "L3", "L4")
 
-# M2Table[$level][$label] = M2 value string
 $M2Table = @{}
 foreach ($lv in $LEVELS) { $M2Table[$lv] = @{} }
 
@@ -80,7 +77,6 @@ function Run-Simulation($label, $level) {
     cmd /c "$javaCmd 2>nul"
     Pop-Location
 
-    # Save result CSV
     if (Test-Path $csvDest) { Remove-Item $csvDest -Force }
     if (Test-Path $RESULT_RAW) {
         Move-Item $RESULT_RAW $csvDest
@@ -92,11 +88,9 @@ function Run-Simulation($label, $level) {
         }
     }
 
-    # Save log
     if (Test-Path $logDest) { Remove-Item $logDest -Force }
     if (Test-Path $simLog) {
         Copy-Item $simLog $logDest -Force
-        # Print CIS summary line
         $cis = Select-String -Path $simLog -Pattern "\[CIS\].*M2_sum" | Select-Object -Last 1
         if ($cis) {
             Write-Host "  $($cis.Line.Trim())" -ForegroundColor Magenta
@@ -146,10 +140,6 @@ function Show-ComparisonTable() {
     }
 }
 
-# =========================================================
-# MAIN
-# =========================================================
-
 Write-Host "==========================================================" -ForegroundColor White
 Write-Host "  PAVS Multi-Level Experiment Runner" -ForegroundColor White
 Write-Host "  4 levels x 3 algorithms = 12 simulations" -ForegroundColor White
@@ -158,7 +148,6 @@ Write-Host "==========================================================" -Foregro
 
 Set-Location $WORKSPACE
 
-# Verify workload files exist before starting
 foreach ($lv in $LEVELS) {
     $wf = "$EXAMPLE_DIR\fat-tree-wiki-workload-$lv.csv"
     if (-not (Test-Path $wf)) {

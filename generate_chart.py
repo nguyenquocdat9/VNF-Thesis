@@ -57,8 +57,6 @@ EFF_COLOR = {
 MIPS_TICKS = [0, 100, 200, 300, 400, 500, 600, 700]
 REF_LEVEL  = "L3"
 
-# ── parsers ──────────────────────────────────────────────────────────────────
-
 def read_log(path):
     for enc in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
         try:
@@ -168,8 +166,7 @@ def interp_at_ticks(events, mips_ticks):
                 break
     return result
 
-# ── data collection ──────────────────────────────────────────────────────────
-
+# doc log files
 def collect_all(log_dir):
     """Returns data[algo][level] = {m1, m2, m3, events, total_mips, efficiency}"""
     data = {algo: {} for algo in ALGOS}
@@ -207,15 +204,14 @@ def collect_all(log_dir):
 
     return data
 
-# ── build JS data payload ─────────────────────────────────────────────────────
-
+# tong hop data cho chart
 def safe(d, key, default=0.0):
     return d[key] if d is not None else default
 
 
 def build_payload(data):
 
-    # ── Chart 1: Grouped bar M2 per level x algo (MAIN) ─────────────────────
+    # chart 1: M2 theo 4 level
     c1_datasets = []
     for algo in ALGOS:
         c1_datasets.append({
@@ -241,11 +237,10 @@ def build_payload(data):
         "level_descs":  [LEVEL_DESCS[lv] for lv in LEVELS],
     }
 
-    # ── Charts 3/4: Single-level detail for REF_LEVEL ───────────────────────
+    # chart 3/4: chi tiet cho REF_LEVEL
     ref = REF_LEVEL
     ref_data = {algo: data[algo][ref] for algo in ALGOS}
 
-    # Chart 3: grouped bar MIPS vs M3
     max_mips   = max(safe(ref_data[a], "total_mips") for a in ALGOS)
     eff_offset = round(max_mips * 0.04, 1)
     c3 = {
@@ -273,7 +268,6 @@ def build_payload(data):
                       f"{int(safe(ref_data[best_eff], 'm3'))} SFC saved "
                       f"({eff_best:.3f} SFC/MIPS) — {eff_ratio}× more efficient than {worst_eff}</b>")
 
-    # Chart 4: SFC violations resolved vs cumulative MIPS budget
     c4_series = []
     for algo in ALGOS:
         events    = ref_data[algo]["events"] if ref_data[algo] else []
@@ -294,8 +288,6 @@ def build_payload(data):
         "c3": c3,
         "c4": c4,
     }
-
-# ── HTML template ─────────────────────────────────────────────────────────────
 
 HTML_TEMPLATE = """\
 <!DOCTYPE html>
@@ -710,8 +702,6 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 </body>
 </html>
 """
-
-# ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
     print("generate_chart.py -- reading 12 log files from:", LOG_DIR)

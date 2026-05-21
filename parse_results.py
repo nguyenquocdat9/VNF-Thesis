@@ -19,10 +19,6 @@ Log format can thiet:
 
 import os, re
 
-# =========================================================
-# CONFIG
-# =========================================================
-
 BASE_DIR = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn\example-sfc"
 LOG_DIR  = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 
@@ -45,10 +41,6 @@ FILES = {
 }
 
 
-# =========================================================
-# HELPERS
-# =========================================================
-
 def read_log(path):
     for enc in ("utf-8", "utf-8-sig", "cp1252", "latin-1"):
         try:
@@ -64,10 +56,6 @@ def rank_symbol(values, algo, higher_is_better=True):
     ranks = {a: i for i, (a, _) in enumerate(s)}
     return ["1st", "2nd", "3rd"][ranks[algo]] if ranks[algo] < 3 else ""
 
-
-# =========================================================
-# PARSER 1: Delta C1/C2/C3 from [BEFORE]/[AFTER]
-# =========================================================
 
 def parse_before_after(log_lines):
     per_vnf = {}
@@ -96,10 +84,6 @@ def parse_before_after(log_lines):
                      sum(e[4] for e in events)), events
 
 
-# =========================================================
-# PARSER 2: CIS from [CIS]
-# =========================================================
-
 def parse_cis(log_lines):
     for line in reversed(log_lines):
         if "[CIS]" not in line or "M1_sum" not in line:
@@ -117,10 +101,6 @@ def parse_cis(log_lines):
     return 0.0, 0.0, 0.0
 
 
-# =========================================================
-# PARSER 3: WLE from [WLE]
-# =========================================================
-
 def parse_wle(log_lines):
     for line in log_lines:
         if "[WLE]" in line and "Weighted Latency Excess" in line:
@@ -130,10 +110,6 @@ def parse_wle(log_lines):
                 pass
     return None
 
-
-# =========================================================
-# PARSER 4: Priority Score from [PRIORITY] (PAVS only)
-# =========================================================
 
 def parse_priority_scores(log_lines):
     scores = []
@@ -150,10 +126,6 @@ def parse_priority_scores(log_lines):
             scores.append((t, vnf_m.group(1), float(score_m.group(1))))
     return scores
 
-
-# =========================================================
-# PARSER 5: MIPS Efficiency per Scale Event
-# =========================================================
 
 def parse_mips_efficiency(log_lines):
     """Returns sorted list of (time, vnf, dmips, dc3, efficiency)."""
@@ -176,10 +148,6 @@ def parse_mips_efficiency(log_lines):
     return sorted(events, key=lambda x: x[0])
 
 
-# =========================================================
-# PARSER 6: Load Variance from [LOAD_VAR]
-# =========================================================
-
 def parse_load_variance(log_lines):
     """Returns sorted list of (time, variance) from [LOAD_VAR] lines."""
     events = []
@@ -195,10 +163,6 @@ def parse_load_variance(log_lines):
             events.append((t, float(m.group(1))))
     return sorted(events, key=lambda x: x[0])
 
-
-# =========================================================
-# PARSER 7: Result CSV -- timeout rate & response time per SFC
-# =========================================================
 
 def parse_result_csv(filepath):
     """
@@ -265,10 +229,6 @@ def parse_result_csv(filepath):
     return result
 
 
-# =========================================================
-# MAIN
-# =========================================================
-
 def main():
     SEP  = "=" * 72
     SEP2 = "-" * 72
@@ -296,9 +256,6 @@ def main():
         w = parse_wle(ll)
         wle[algo] = w
 
-    # =========================================================
-    # TABLE 1: DC1/DC2/DC3 per scale event
-    # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 1 -- Delta C1/C2/C3 per Scale Event")
     print("  DC1 = SLA fail rate reduction | DC2 = priority-weighted SFC reduction | DC3 = SFC count reduction")
@@ -317,9 +274,6 @@ def main():
             print(f"  {t:>6.1f} | {vnf:<12} | {dc1:>+8.3f} | {dc2:>+8.3f} | {dc3:>+6.0f}")
         print(f"  {'SUM':>6} | {'':12} | {ba[algo]['dc1']:>+8.3f} | {ba[algo]['dc2']:>+8.3f} | {ba[algo]['dc3']:>+6.0f}")
 
-    # =========================================================
-    # TABLE 2: CIS (M2/M3) -- M1 loai bo
-    # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 2 -- Cumulative Improvement Score (CIS)")
     print("  M2=sum(DC2) KEY METRIC | M3=sum(DC3) | Cao hon = tot hon")
@@ -336,9 +290,6 @@ def main():
         diff = f"+{(m2 - min_m2):.3f}" if m2 > min_m2 else "baseline"
         print(f"  {algo:<14} | {m2:>12.3f} | {m3:>10.3f} | {rank:>8}  {diff}")
 
-    # =========================================================
-    # TABLE 2b: MIPS Efficiency (C3 in action)
-    # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 2b -- MIPS Efficiency (C3 in action)")
     print("  Total MIPS: sum(delta) from [VERTICAL SCALE] events (same as [AFTER] dMips=)")
@@ -364,9 +315,6 @@ def main():
     print(f"\n  NOTE: PAVS su dung it MIPS nhat nhung cuu duoc nhieu SFC nhat")
     print(f"        -- C3 (MIPS Efficiency) trong Priority Score hoat dong dung muc tieu")
 
-    # =========================================================
-    # TABLE 3: VNF Scale Order / Priority Score
-    # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 3 -- VNF Scale Order (Priority Score vs util/queue)")
     print("  PAVS: chon theo C1+C2+C3 | WorstFirst: util cao nhat | QueueFirst: queue dai nhat")
@@ -403,9 +351,6 @@ def main():
                 except (ValueError, IndexError):
                     pass
 
-    # =========================================================
-    # TABLE 4: WLE (Weighted Latency Excess)
-    # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 4 -- Weighted Latency Excess (WLE) -- do tre component-level qua M/M/1")
     print("  WLE = sum_t sum_SFC [ priority * W_q(VNF,t) * dt ]")
@@ -464,9 +409,6 @@ def main():
     else:
         print("  (Chua co du lieu WLE -- chay lai simulation de cap nhat)")
 
-    # =========================================================
-    # TABLE 5: Host Load Variance after Scale Events
-    # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 5 -- Host Load Variance after Scale Events")
     print("  variance = sum((util_i - mean)^2) / n  |  thap hon = load deu hon sau scale")
@@ -501,9 +443,6 @@ def main():
     else:
         print("  (Chua co [LOAD_VAR] log -- rebuild va chay lai simulation)")
 
-    # =========================================================
-    # TABLE 6: Timeout Rate per SFC (NoScale vs scaling algos)
-    # =========================================================
     csvs = {a: parse_result_csv(FILES[a]) for a in ALGOS}
     SFC_ORDER = [("sfc1",1.0),("sfc5",0.9),("sfc2",0.8),
                  ("sfc3",0.6),("sfc4",0.4),("sfc6",0.3)]
@@ -568,9 +507,6 @@ def main():
                 imp = "N/A"
             print(f"  {sfc:<6} {pri:>5.1f} | " + " | ".join(cells) + f" | {imp}")
 
-    # =========================================================
-    # TABLE 7: MIPS Efficiency per Scale Event
-    # =========================================================
     print(f"\n{SEP}")
     print("  TABLE 8 -- MIPS Efficiency per Scale Event")
     print("  delta_MIPS: MIPS thuc su cap them (tu [AFTER] dMips=)")
@@ -617,9 +553,6 @@ def main():
     print(f"  (SFC cuu duoc) / (MIPS can cap) lon nhat. Total_MIPS nho hon nhung")
     print(f"  total_DC3 lon hon => uu tien bottleneck thuc su, khong lang phi MIPS.")
 
-    # =========================================================
-    # FINAL SUMMARY
-    # =========================================================
     print(f"\n{SEP}")
     print("  FINAL SUMMARY")
     print(SEP)
