@@ -358,8 +358,8 @@ HTML_TEMPLATE = """\
 
 <div class="charts-grid">
   <div class="chart-card wide" style="max-width:620px;margin:0 auto;">
-    <h2>Chart 2 &#8212; DC2 per Scale Event theo thời gian</h2>
-    <p>M&#7895;i cycle scale, m&#7895;i thu&#7853;t to&#225;n c&#7913;u &#273;&#432;&#7907;c bao nhi&#234;u DC2? Kh&#225;c Chart 1 (t&#7893;ng M2) v&#224; Chart 3/4 (MIPS efficiency).</p>
+    <h2>Chart 2 &#8212; DC2 per Scale Event t&#7841;i L4 (3/12/18 req/SFC)</h2>
+    <p>DC2 m&#7895;i chu k&#7923; scale t&#7841;i m&#7913;c t&#7843;i nhi&#7873;u nh&#7845;t L4. PAVS duy tr&#236; hi&#7879;u qu&#7843; xuy&#234;n su&#7889;t, WorstFirst/QueueFirst d&#7915;ng s&#7899;m do h&#7871;t ng&#226;n s&#225;ch MIPS.</p>
     <div style="position:relative;height:280px"><canvas id="c2"></canvas></div>
     <div class="legend-box" id="legend2"></div>
   </div>
@@ -456,19 +456,20 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 // Chart 2: DC2 per Scale Event over time (hardcoded from logs)
 // ============================================================
 (function () {
+  // DC2 per scale event -- workload L4 (3/12/18 req/SFC) tu simulation log thuc te
   const scaleEvents = {
-    labels: ['t=60s', 't=120s', 't=150s', 't=180s', 't=210s'],
-    'PAVS':       [3.0, 3.0, 3.0, 2.5, 3.0],
-    'WorstFirst': [3.0, 3.7, 3.7, 1.2, 1.2],
-    'QueueFirst': [3.0, 3.7, 3.7, 0,   0  ],
-    'FirstFit':   [3.7, 3.7, 3.7, 3.7, 3.7],
-    'RandomFit':  [3.0, 3.7, 3.0, 3.7, 3.0],
+    labels: ['t=30s', 't=60s', 't=90s', 't=120s', 't=150s', 't=180s'],
+    'PAVS':       [3.0, 2.5, 2.5, 3.0, 3.0, 3.7],
+    'WorstFirst': [3.0, 3.7, 0,   1.2, 0,   0  ],
+    'QueueFirst': [3.0, 3.7, 0,   0,   0,   0  ],
+    'FirstFit':   [3.0, 2.5, 3.7, 2.0, 2.5, 0  ],
+    'RandomFit':  [3.0, 3.7, 2.5, 3.0, 2.5, 0  ],
     vnfScaled: {
-      'PAVS':       ['vnf_nat', 'vnf_nat', 'vnf_nat', 'vnf_ids', 'vnf_nat'],
-      'WorstFirst': ['vnf_nat', 'vnf_fw',  'vnf_fw',  'vnf_enc', 'vnf_enc'],
-      'QueueFirst': ['vnf_nat', 'vnf_fw',  'vnf_fw',  '-',       '-'      ],
-      'FirstFit':   ['vnf_fw',  'vnf_fw',  'vnf_fw',  'vnf_fw',  'vnf_fw' ],
-      'RandomFit':  ['vnf_nat', 'vnf_fw',  'vnf_nat', 'vnf_fw',  'vnf_nat'],
+      'PAVS':       ['vnf_nat', 'vnf_ids', 'vnf_ids', 'vnf_nat', 'vnf_nat', 'vnf_fw'],
+      'WorstFirst': ['vnf_nat', 'vnf_fw',  '-',       'vnf_enc', '-',       '-'     ],
+      'QueueFirst': ['vnf_nat', 'vnf_fw',  '-',       '-',       '-',       '-'     ],
+      'FirstFit':   ['vnf_nat', 'vnf_ids', 'vnf_fw',  'vnf_lb',  'vnf_ids', '-'     ],
+      'RandomFit':  ['vnf_nat', 'vnf_fw',  'vnf_ids', 'vnf_nat', 'vnf_ids', '-'     ],
     }
   };
 
@@ -504,7 +505,7 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
         legend: { position: 'top' },
         subtitle: {
           display: true,
-          text: 'PAVS duy tr\\u00ec DC2\\u22652.5 m\\u1ecdi cycle | WorstFirst gi\\u1ea3m v\\u1ec1 1.2 | QueueFirst d\\u1eebng sau t=150s',
+          text: 'L4: PAVS t\\u0103ng l\\u00ean DC2=3.7 (vnf_fw) v\\u00e0o cu\\u1ed1i | WorstFirst d\\u1eebng sau t=120s | QueueFirst d\\u1eebng sau t=60s',
           color: '#7f8c8d',
           font: { size: 12 },
           padding: { bottom: 8 }
