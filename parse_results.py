@@ -24,20 +24,24 @@ LOG_DIR  = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 
 TIME_OUT = 200.0   # khop voi Configuration.java
 
-ALGOS = ["NoScale", "PAVS", "WorstFirst", "QueueFirst"]
+ALGOS = ["NoScale", "PAVS", "WorstFirst", "QueueFirst", "FirstFit", "RandomFit"]
 
 LOG_FILES = {
     "NoScale":    os.path.join(LOG_DIR, "simulation_log_noscale.txt"),
-    "PAVS":     os.path.join(LOG_DIR, "simulation_log_pavs.txt"),
+    "PAVS":       os.path.join(LOG_DIR, "simulation_log_pavs.txt"),
     "WorstFirst": os.path.join(LOG_DIR, "simulation_log_worstfirst.txt"),
     "QueueFirst": os.path.join(LOG_DIR, "simulation_log_queuefirst.txt"),
+    "FirstFit":   os.path.join(LOG_DIR, "simulation_log_firstfit.txt"),
+    "RandomFit":  os.path.join(LOG_DIR, "simulation_log_randomfit.txt"),
 }
 
 FILES = {
     "NoScale":    os.path.join(BASE_DIR, "result_noscale.csv"),
-    "PAVS":     os.path.join(BASE_DIR, "result_pavs.csv"),
+    "PAVS":       os.path.join(BASE_DIR, "result_pavs.csv"),
     "WorstFirst": os.path.join(BASE_DIR, "result_worstfirst.csv"),
     "QueueFirst": os.path.join(BASE_DIR, "result_queuefirst.csv"),
+    "FirstFit":   os.path.join(BASE_DIR, "result_firstfit.csv"),
+    "RandomFit":  os.path.join(BASE_DIR, "result_randomfit.csv"),
 }
 
 
@@ -52,9 +56,11 @@ def read_log(path):
 
 
 def rank_symbol(values, algo, higher_is_better=True):
+    _labels = ["1st", "2nd", "3rd", "4th", "5th", "6th"]
     s = sorted(values.items(), key=lambda x: x[1], reverse=higher_is_better)
     ranks = {a: i for i, (a, _) in enumerate(s)}
-    return ["1st", "2nd", "3rd"][ranks[algo]] if ranks[algo] < 3 else ""
+    idx = ranks[algo]
+    return _labels[idx] if idx < len(_labels) else ""
 
 
 def parse_before_after(log_lines):
@@ -234,7 +240,7 @@ def main():
     SEP2 = "-" * 72
 
     print(SEP)
-    print("  PAVS vs WorstFirst vs QueueFirst -- Comparison Report")
+    print("  PAVS vs WorstFirst vs QueueFirst vs FirstFit vs RandomFit -- Comparison Report")
     print(f"  Workload: 3-phase (3/8/12 req/SFC) | TIME_OUT={TIME_OUT}s")
     print(f"  SFC Priority: sfc1=1.0, sfc5=0.9, sfc2=0.8, sfc3=0.6, sfc4=0.4, sfc6=0.3")
     print(SEP)
@@ -299,7 +305,7 @@ def main():
     print("  " + SEP2)
 
     _eff2b = {}
-    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+    for algo in ["PAVS", "WorstFirst", "QueueFirst", "FirstFit", "RandomFit"]:
         ev = parse_mips_efficiency(logs[algo])
         tm = sum(e[2] for e in ev)
         m3 = cis[algo]["m3"]
@@ -307,8 +313,8 @@ def main():
         _eff2b[algo] = (tm, m3, oe)
 
     _sorted2b = sorted(_eff2b, key=lambda a: _eff2b[a][2], reverse=True)
-    _rank2b   = {a: ["1st", "2nd", "3rd"][i] for i, a in enumerate(_sorted2b)}
-    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+    _rank2b   = {a: ["1st", "2nd", "3rd", "4th", "5th"][i] for i, a in enumerate(_sorted2b)}
+    for algo in ["PAVS", "WorstFirst", "QueueFirst", "FirstFit", "RandomFit"]:
         tm, m3, oe = _eff2b[algo]
         print(f"  {algo:<14} | {tm:>12.1f} | {m3:>14.0f} | {oe:>21.3f} | {_rank2b[algo]}")
 
@@ -333,9 +339,14 @@ def main():
                 note = " <-- SCALE THIS" if sc == max(x[2] for x in first_cycle) else ""
                 print(f"  {vnf:<12} | {sc:>8.4f} |{note}")
         else:
-            print(f"\n  [{algo}] -- scale by {'util' if 'Worst' in algo else 'queue'} (no [PRIORITY] log)")
+            _tag_map = {"WorstFirst": "[WF-VERT]", "QueueFirst": "[QF-VERT]",
+                        "FirstFit": "[FF-VERT]", "RandomFit": "[RF-VERT]"}
+            _desc_map = {"WorstFirst": "util", "QueueFirst": "queue",
+                         "FirstFit": "first-fit", "RandomFit": "random"}
+            desc = _desc_map.get(algo, "order")
+            print(f"\n  [{algo}] -- scale by {desc} (no [PRIORITY] log)")
             for line in ll:
-                tag = "[WF-VERT]" if "Worst" in algo else "[QF-VERT]"
+                tag = _tag_map.get(algo, "[VERT]")
                 if tag not in line:
                     continue
                 try:
@@ -361,7 +372,7 @@ def main():
 
     wle_vals = {a: wle[a] for a in ALGOS if wle.get(a)}
     if wle_vals:
-        rank_labels = ["1st", "2nd", "3rd", "4th"]
+        _rl = ["1st", "2nd", "3rd", "4th", "5th", "6th"]
         print(f"\n  {'Algorithm':<14} | {'WLE':>14} | {'vs best':>10} | Rank")
         print("  " + SEP2)
         sorted_algos = sorted(wle_vals, key=lambda a: wle_vals[a])
@@ -369,22 +380,21 @@ def main():
         for i, algo in enumerate(sorted_algos):
             v    = wle_vals[algo]
             diff = f"+{(v - best_val) / best_val * 100:.1f}%" if v > best_val else "best"
-            rank = rank_labels[i] if i < len(rank_labels) else "-"
+            rank = _rl[i] if i < len(_rl) else "-"
             print(f"  {algo:<14} | {v:>14.3f} | {diff:>10} | {rank}")
 
         # Phan tich so sanh WLE vs M2
         print(f"\n  WLE <-> M2: hai goc do do khac nhau cua cung mot van de")
         print(f"  {'Algorithm':<14} | {'WLE (component)':>17} | {'M2 (end-to-end)':>17} | Nhan xet")
         print("  " + "-" * 72)
-        rank_labels = ["1st", "2nd", "3rd", "4th"]
         wle_rank = {a: i for i, a in enumerate(sorted_algos)}
         m2_rank  = {a: i for i, a in
                     enumerate(sorted(ALGOS, key=lambda a: cis[a]["m2"], reverse=True))}
         for algo in ALGOS:
             wv = f"{wle.get(algo, 0):.1f}" if wle.get(algo) else "N/A"
             mv = f"{cis[algo]['m2']:.3f}"
-            wr = rank_labels[wle_rank[algo]] if algo in wle_rank else "N/A"
-            mr = rank_labels[m2_rank[algo]]  if m2_rank[algo] < len(rank_labels) else "-"
+            wr = _rl[wle_rank[algo]] if algo in wle_rank and wle_rank[algo] < len(_rl) else "N/A"
+            mr = _rl[m2_rank[algo]]  if m2_rank[algo] < len(_rl) else "-"
             note = f"WLE={wr}, M2={mr}" if algo in wle_rank else "no scaling"
             print(f"  {algo:<14} | {wv:>17} | {mv:>17} | {note}")
 
@@ -416,27 +426,29 @@ def main():
     print(SEP)
 
     lv_data = {}
-    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+    _scale_algos = ["PAVS", "WorstFirst", "QueueFirst", "FirstFit", "RandomFit"]
+    for algo in _scale_algos:
         lv_data[algo] = parse_load_variance(logs[algo])
 
     all_times = sorted(set(t for ev in lv_data.values() for t, _ in ev))
     if all_times:
-        print(f"\n  {'Time':>6} | {'PAVS var':>12} | {'WorstFirst var':>14} | {'QueueFirst var':>14}")
-        print("  " + "-" * 55)
+        hdr = f"  {'Time':>6} |" + "".join(f" {a:>13} |" for a in _scale_algos)
+        print(f"\n{hdr}")
+        print("  " + "-" * (8 + 15 * len(_scale_algos)))
         for t in all_times:
             row = f"  {t:>6.1f} |"
-            for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+            for algo in _scale_algos:
                 match = next((v for ts, v in lv_data[algo] if abs(ts - t) < 1.0), None)
-                row += f" {match:>11.4f} |" if match is not None else f" {'N/A':>11} |"
+                row += f" {match:>12.4f} |" if match is not None else f" {'N/A':>12} |"
             print(row)
-        print("  " + "-" * 55)
+        print("  " + "-" * (8 + 15 * len(_scale_algos)))
         avgs = {}
-        for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+        for algo in _scale_algos:
             vals = [v for _, v in lv_data[algo]]
             avgs[algo] = sum(vals) / len(vals) if vals else 0.0
         row = f"  {'AVG':>6} |"
-        for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
-            row += f" {avgs[algo]:>11.4f} |"
+        for algo in _scale_algos:
+            row += f" {avgs[algo]:>12.4f} |"
         print(row)
         best_lv = min(avgs, key=lambda a: avgs[a])
         print(f"\n  Winner (lowest avg variance): {best_lv} => load distribution most even after scaling")
@@ -515,10 +527,9 @@ def main():
     print("  Chung minh C3 hoat dong dung muc tieu: uu tien VNF cuu nhieu SFC / MIPS nhat")
     print(SEP)
 
+    _eff_algos = [a for a in ALGOS if a != "NoScale"]
     mips_eff_data = {}
-    for algo in ALGOS:
-        if algo == "NoScale":
-            continue
+    for algo in _eff_algos:
         ev = parse_mips_efficiency(logs[algo])
         mips_eff_data[algo] = ev
         if not ev:
@@ -534,18 +545,18 @@ def main():
         overall    = total_dc3 / total_mips if total_mips > 0 else 0.0
         print(f"  {'TOTAL':>6} | {'':12} | {total_mips:>10.1f} | {total_dc3:>+6.0f} | {overall:>21.4f}")
 
-    print(f"\n  COMPARISON -- Tong ket hieu qua su dung MIPS (3 thuat toan):")
+    print(f"\n  COMPARISON -- Tong ket hieu qua su dung MIPS (5 thuat toan):")
     print(f"  {'Algorithm':<14} | {'total_MIPS':>12} | {'total_DC3':>10} | {'overall_eff (SFC/MIPS)':>22} | Rank")
     print("  " + "-" * 72)
     eff_summary = {}
-    for algo in ["PAVS", "WorstFirst", "QueueFirst"]:
+    for algo in _eff_algos:
         ev = mips_eff_data.get(algo, [])
         tm = sum(e[2] for e in ev)
         td = sum(e[3] for e in ev)
         oe = td / tm if tm > 0 else 0.0
         eff_summary[algo] = (tm, td, oe)
     sorted_eff = sorted(eff_summary, key=lambda a: eff_summary[a][2], reverse=True)
-    rank_lbl7  = ["1st", "2nd", "3rd"]
+    rank_lbl7  = ["1st", "2nd", "3rd", "4th", "5th"]
     for i, algo in enumerate(sorted_eff):
         tm, td, oe = eff_summary[algo]
         print(f"  {algo:<14} | {tm:>12.1f} | {td:>10.0f} | {oe:>22.4f} | {rank_lbl7[i]}")
@@ -596,13 +607,13 @@ def main():
     m2v = {a: cis[a]["m2"] for a in scaling_algos}
     best_a  = max(m2v, key=lambda a: m2v[a])
     worst_a = min(m2v, key=lambda a: m2v[a])
-    others  = [a for a in scaling_algos if a != best_a and a != worst_a]
-    second_a = others[0] if others else worst_a
+    sorted_m2 = sorted(scaling_algos, key=lambda a: m2v[a], reverse=True)
+    second_a  = sorted_m2[1] if len(sorted_m2) > 1 else worst_a
     if m2v[worst_a] > 0:
         diff_best_worst  = m2v[best_a] - m2v[worst_a]
         diff_best_second = m2v[best_a] - m2v[second_a]
         pct_worst  = diff_best_worst  / m2v[worst_a]  * 100
-        pct_second = diff_best_second / m2v[second_a] * 100
+        pct_second = diff_best_second / m2v[second_a] * 100 if m2v[second_a] != 0 else 0
         print(f"\n  KEY FINDING (M2 -- system-level SLA metric):")
         print(f"  {best_a} vs {second_a}: M2 {diff_best_second:+.3f} pts ({pct_second:+.1f}%)")
         print(f"  {best_a} vs {worst_a}:  M2 {diff_best_worst:+.3f} pts ({pct_worst:+.1f}%)")

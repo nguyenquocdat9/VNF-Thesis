@@ -1,21 +1,21 @@
 """
 generate_chart.py
 =================
-Reads 12 simulation logs (4 levels x 3 algos) -> writes results_chart.html.
+Reads 20 simulation logs (4 levels x 5 algos) -> writes results_chart_5algos.html.
 
 Log file naming: simulation_log_{algo}_{level}.txt
   e.g. simulation_log_pavs_L3.txt
 
 Charts:
-  1. Grouped bar  -- M2 score per level (X=L1..L4, groups=3 algos)  [MAIN]
-  2. Line trend   -- M2 across levels per algo (scaling behavior)
+  1. Grouped bar  -- M2 score per level (X=L1..L4, groups=5 algos)  [MAIN]
+  2. Bar          -- DC2 per scale event (hardcoded from logs)
   3. Grouped bar  -- MIPS used vs SFC saved (M3) for L3
   4. Line+Scatter -- SFC violations resolved vs MIPS budget for L3
 
 Run:
     python generate_chart.py
 Output:
-    results_chart.html
+    results_chart_5algos.html
 """
 
 import re, json, os, sys
@@ -23,9 +23,10 @@ from datetime import datetime
 
 LOG_DIR      = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn"
 WORKLOAD_DIR = r"C:\Users\Admin\Documents\GitHub\cloudsim-workspace\cloudsimsdn\example-sfc"
-OUTPUT       = os.path.join(LOG_DIR, "results_chart.html")
+OUTPUT       = os.path.join(LOG_DIR, "results_chart_5algos.html")
 
-ALGOS  = ["PAVS", "WorstFirst", "QueueFirst"]
+ALGOS       = ["PAVS", "WorstFirst", "QueueFirst", "FirstFit", "RandomFit"]
+ALGOS_CHART = ["PAVS", "WorstFirst", "QueueFirst", "FirstFit", "RandomFit"]
 LEVELS = ["L1", "L2", "L3", "L4"]
 LEVEL_LABELS = {
     "L1": ["L1", "(3/3/3)"],
@@ -41,18 +42,26 @@ LEVEL_DESCS = {
 }
 
 LOG_KEY = {
-    "PAVS":     "pavs",
+    "PAVS":       "pavs",
     "WorstFirst": "worstfirst",
     "QueueFirst": "queuefirst",
+    "FirstFit":   "firstfit",
+    "RandomFit":  "randomfit",
 }
 
 PALETTE = {
-    "PAVS":     {"line": "#27ae60", "fill": "rgba(46,204,113,0.15)",  "bar": "rgba(46,204,113,0.82)"},
+    "PAVS":       {"line": "#27ae60", "fill": "rgba(46,204,113,0.15)",  "bar": "rgba(46,204,113,0.82)"},
     "WorstFirst": {"line": "#2980b9", "fill": "rgba(52,152,219,0.10)",  "bar": "rgba(52,152,219,0.82)"},
     "QueueFirst": {"line": "#c0392b", "fill": "rgba(231,76,60,0.08)",   "bar": "rgba(231,76,60,0.82)"},
+    "FirstFit":   {"line": "#8e44ad", "fill": "rgba(155,89,182,0.12)",  "bar": "rgba(155,89,182,0.82)"},
+    "RandomFit":  {"line": "#d35400", "fill": "rgba(230,126,34,0.08)",  "bar": "rgba(230,126,34,0.82)"},
 }
 EFF_COLOR = {
-    "PAVS": "#27ae60", "WorstFirst": "#e67e22", "QueueFirst": "#c0392b",
+    "PAVS":       "#27ae60",
+    "WorstFirst": "#e67e22",
+    "QueueFirst": "#c0392b",
+    "FirstFit":   "#8e44ad",
+    "RandomFit":  "#d35400",
 }
 MIPS_TICKS = [0, 100, 200, 300, 400, 500, 600, 700]
 REF_LEVEL  = "L3"
@@ -323,7 +332,7 @@ HTML_TEMPLATE = """\
 <h1>PAVS vs Baselines &#8212; NFV Auto-Scaling (Multi-Level)</h1>
 <p class="subtitle">
   Fat-Tree k=6 &#124; 54 hosts &#124; 6 SFC &#124; 5 VNF &#124;
-  4 workload levels (L1..L4) &#124; 3 algorithms &#215; 4 levels = 12 simulations &#124;
+  4 workload levels (L1..L4) &#124; 5 thu&#7853;t to&#225;n &#215; 4 m&#7913;c = 20 simulations &#124;
   CloudSimSDN-NFV v2.0
 </p>
 
@@ -449,21 +458,27 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 (function () {
   const scaleEvents = {
     labels: ['t=60s', 't=120s', 't=150s', 't=180s', 't=210s'],
-    'PAVS':     [3.0, 3.0, 3.0, 2.5, 3.0],
+    'PAVS':       [3.0, 3.0, 3.0, 2.5, 3.0],
     'WorstFirst': [3.0, 3.7, 3.7, 1.2, 1.2],
     'QueueFirst': [3.0, 3.7, 3.7, 0,   0  ],
+    'FirstFit':   [3.7, 3.7, 3.7, 3.7, 3.7],
+    'RandomFit':  [3.0, 3.7, 3.0, 3.7, 3.0],
     vnfScaled: {
-      'PAVS':     ['vnf_nat', 'vnf_nat', 'vnf_nat', 'vnf_ids', 'vnf_nat'],
+      'PAVS':       ['vnf_nat', 'vnf_nat', 'vnf_nat', 'vnf_ids', 'vnf_nat'],
       'WorstFirst': ['vnf_nat', 'vnf_fw',  'vnf_fw',  'vnf_enc', 'vnf_enc'],
       'QueueFirst': ['vnf_nat', 'vnf_fw',  'vnf_fw',  '-',       '-'      ],
+      'FirstFit':   ['vnf_fw',  'vnf_fw',  'vnf_fw',  'vnf_fw',  'vnf_fw' ],
+      'RandomFit':  ['vnf_nat', 'vnf_fw',  'vnf_nat', 'vnf_fw',  'vnf_nat'],
     }
   };
 
-  const algos = ['PAVS', 'WorstFirst', 'QueueFirst'];
+  const algos = ['PAVS', 'WorstFirst', 'QueueFirst', 'FirstFit', 'RandomFit'];
   const colors = {
-    'PAVS':     { bg: 'rgba(46,204,113,0.82)',  border: '#27ae60' },
+    'PAVS':       { bg: 'rgba(46,204,113,0.82)',  border: '#27ae60' },
     'WorstFirst': { bg: 'rgba(52,152,219,0.82)',  border: '#2980b9' },
     'QueueFirst': { bg: 'rgba(231,76,60,0.82)',   border: '#c0392b' },
+    'FirstFit':   { bg: 'rgba(155,89,182,0.82)',  border: '#8e44ad' },
+    'RandomFit':  { bg: 'rgba(230,126,34,0.82)',  border: '#d35400' },
   };
 
   const ds2 = algos.map(function (algo) {
@@ -549,27 +564,24 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 }());
 
 // ============================================================
-// Chart 3: Grouped bar MIPS + M3 (reference level)
+// Chart 3: Grouped bar MIPS + M3 (reference level) -- auto from DATA.c3
 // ============================================================
 (function () {
-  const labels = ['PAVS', 'WorstFirst', 'QueueFirst'];
-  const mips   = [411.1, 670.3, 463.6];
-  const m3     = [24, 19, 15];
-  const effMap = {
-    'PAVS':       { val: '0.058 SFC/MIPS', color: '#27ae60', yAdj: 440 },
-    'WorstFirst': { val: '0.028 SFC/MIPS', color: '#e67e22', yAdj: 700 },
-    'QueueFirst': { val: '0.032 SFC/MIPS', color: '#c0392b', yAdj: 493 },
-  };
+  const d      = DATA.c3;
+  const labels = d.labels;
+  const mips   = d.mips;
+  const m3     = d.m3;
 
   const annots = {};
   labels.forEach(function (a) {
+    const ea = d.eff_annots[a];
     annots['eff_' + a] = {
       type: 'label',
       xValue: a,
-      yValue: effMap[a].yAdj,
+      yValue: ea.yValue,
       yScaleID: 'yMips',
-      content: effMap[a].val,
-      color: effMap[a].color,
+      content: ea.content,
+      color: ea.color,
       font: { size: 11, weight: 'bold' },
       backgroundColor: 'transparent',
       borderWidth: 0,
@@ -605,14 +617,14 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
         legend: { position: 'top' },
         tooltip: { mode: 'index' },
         subtitle: {
-          display: true, text: 'PAVS efficiency = 2.1× WorstFirst',
+          display: true, text: d.subtitle,
           color: '#27ae60', font: { size: 12, weight: 'bold' }, padding: { bottom: 8 }
         },
         annotation: { annotations: annots }
       },
       scales: {
         yMips: {
-          type: 'linear', position: 'left', beginAtZero: true, max: 750,
+          type: 'linear', position: 'left', beginAtZero: true, max: d.y_max,
           title: { display: true, text: 'ΔMIPS Allocated' },
           grid:  { color: 'rgba(155,89,182,0.1)' }
         },
@@ -625,8 +637,7 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
     }
   });
 
-  document.getElementById('legend3').innerHTML =
-    '<b>PAVS: 411.1 MIPS → 24 SFC saved (0.058 SFC/MIPS) — 2.1× more efficient than WorstFirst</b>';
+  document.getElementById('legend3').innerHTML = d.legend;
 }());
 
 // ============================================================
@@ -704,7 +715,7 @@ document.getElementById('c4title').textContent  = 'Chart 4 — SFC Violations vs
 """
 
 def main():
-    print("generate_chart.py -- reading 12 log files from:", LOG_DIR)
+    print("generate_chart.py -- reading 20 log files from:", LOG_DIR)
     data = collect_all(LOG_DIR)
 
     print(f"\n  {'Algo':<14} {'Level':>5} {'Events':>7} {'M2':>7} {'M3':>5} {'MIPS':>8} {'Eff':>7}")
